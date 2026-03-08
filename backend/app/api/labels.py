@@ -92,6 +92,8 @@ async def generate_label(
         batch_no=payload.lot,
         expiry_date=payload.expiry,
         serial_no=payload.serial,
+        production_date=payload.production_date,
+        remarks=payload.remarks,
         full_string=gs1_element_string,
     )
     db.add(history)
@@ -112,13 +114,14 @@ async def generate_label(
 
 @router.get("/history", response_model=LabelHistoryListResponse)
 async def list_label_history(
+    user_id: int = Query(..., gt=0),
     db: Session = Depends(get_db),
     gtin: Annotated[str | None, Query(min_length=14, max_length=14)] = None,
     batch_no: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 10,
 ) -> LabelHistoryListResponse:
-    base_statement = select(LabelHistory)
+    base_statement = select(LabelHistory).where(LabelHistory.user_id == user_id)
 
     if gtin:
         base_statement = base_statement.where(LabelHistory.gtin == gtin)
@@ -141,6 +144,8 @@ async def list_label_history(
             batch_no=row.batch_no,
             expiry_date=row.expiry_date,
             serial_no=row.serial_no,
+            production_date=row.production_date,
+            remarks=row.remarks,
             full_string=row.full_string,
             created_at=row.created_at,
         )
@@ -148,3 +153,28 @@ async def list_label_history(
     ]
 
     return LabelHistoryListResponse(total=total, page=page, page_size=page_size, items=items)
+
+
+@router.delete("/history/{history_id}")
+async def delete_label_history(
+    history_id: int,
+    user_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    record = db.execute(
+        select(LabelHistory).where(LabelHistory.id == history_id)
+    ).scalar_one_or_none()
+
+    if record is None:
+        raise HTTPException(status_code=404, detail="history record not found")
+
+    if record.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete this record",
+        )
+
+    db.delete(record)
+    db.commit()
+
+    return {"message": "deleted successfully"}

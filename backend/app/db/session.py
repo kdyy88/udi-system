@@ -32,6 +32,8 @@ def prepare_sqlite_schema_for_poc() -> None:
         "batch_no",
         "expiry_date",
         "serial_no",
+        "production_date",
+        "remarks",
         "full_string",
         "created_at",
     }

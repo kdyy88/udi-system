@@ -4,6 +4,11 @@ export type HealthResponse = {
   timestamp: string;
 };
 
+export type AuthUser = {
+  user_id: number;
+  username: string;
+};
+
 export type LoginResponse = {
   user_id: number;
   username: string;
@@ -31,6 +36,8 @@ export type LabelHistoryItem = {
   batch_no: string | null;
   expiry_date: string | null;
   serial_no: string | null;
+  production_date: string | null;
+  remarks: string | null;
   full_string: string;
   created_at: string;
 };

@@ -27,6 +27,8 @@ class LabelHistory(Base):
     batch_no: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     expiry_date: Mapped[str | None] = mapped_column(String(6), nullable=True)
     serial_no: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    production_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_string: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True

@@ -12,7 +12,7 @@ type DatePickerProps = {
 
 export function DatePicker({ value, onChange, className }: DatePickerProps) {
   return (
-    <label className={cn("relative block", className)}>
+    <label className={cn("relative block w-full", className)}>
       <CalendarDays className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
       <input
         type="date"

@@ -6,6 +6,8 @@ import type { LabelHistoryItem } from "@/types/udi";
 type DataTableProps = {
   rows: LabelHistoryItem[];
   onReview: (row: LabelHistoryItem) => void;
+  onDelete: (id: number) => void;
+  loadingRowId?: number | null;
   pagination?: {
     page: number;
     pageSize: number;
@@ -15,14 +17,15 @@ type DataTableProps = {
   };
 };
 
-export function DataTable({ rows, onReview, pagination }: DataTableProps) {
+export function DataTable({ rows, onReview, onDelete, loadingRowId, pagination }: DataTableProps) {
   const totalPages = pagination
     ? Math.max(1, Math.ceil(pagination.total / pagination.pageSize))
     : 1;
 
   return (
-    <div className="overflow-hidden rounded-xl border">
-      <table className="w-full border-collapse text-sm">
+    <div className="rounded-xl border">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
         <thead className="bg-muted/50 text-left">
           <tr>
             <th className="px-3 py-2 font-medium">ID</th>
@@ -51,18 +54,33 @@ export function DataTable({ rows, onReview, pagination }: DataTableProps) {
                 <td className="px-3 py-2">{row.serial_no ?? "-"}</td>
                 <td className="px-3 py-2">{new Date(row.created_at).toLocaleString()}</td>
                 <td className="px-3 py-2 text-right">
-                  <Button size="sm" variant="outline" onClick={() => onReview(row)}>
-                    重新查看
-                  </Button>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={loadingRowId === row.id}
+                      onClick={() => onReview(row)}
+                    >
+                      {loadingRowId === row.id ? "加载中..." : "查看"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => onDelete(row.id)}
+                    >
+                      删除
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))
           )}
         </tbody>
-      </table>
+        </table>
+      </div>
       {pagination ? (
-        <div className="flex items-center justify-between border-t bg-muted/20 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">
+        <div className="flex flex-col gap-2 border-t bg-muted/20 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-muted-foreground text-xs sm:text-sm">
             共 {pagination.total} 条，当前第 {pagination.page}/{totalPages} 页
           </span>
           <div className="flex items-center gap-2">
@@ -71,6 +89,7 @@ export function DataTable({ rows, onReview, pagination }: DataTableProps) {
               variant="outline"
               disabled={pagination.page <= 1}
               onClick={pagination.onPrev}
+              className="text-xs"
             >
               上一页
             </Button>
@@ -79,6 +98,7 @@ export function DataTable({ rows, onReview, pagination }: DataTableProps) {
               variant="outline"
               disabled={pagination.page >= totalPages}
               onClick={pagination.onNext}
+              className="text-xs"
             >
               下一页
             </Button>

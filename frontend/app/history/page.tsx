@@ -129,6 +129,7 @@ export default function HistoryPage() {
       <DataTable
         rows={rows}
         onReview={handleReview}
+        onDelete={() => {}}
         pagination={{
           page,
           pageSize,

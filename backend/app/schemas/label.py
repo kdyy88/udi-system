@@ -8,6 +8,8 @@ class LabelInput(BaseModel):
     lot: str | None = None
     expiry: str | None = None
     serial: str | None = None
+    production_date: str | None = None
+    remarks: str | None = None
 
 
 class LabelCreateRequest(LabelInput):
@@ -35,6 +37,8 @@ class LabelHistoryResponse(BaseModel):
     batch_no: str | None
     expiry_date: str | None
     serial_no: str | None
+    production_date: str | None
+    remarks: str | None
     full_string: str
     created_at: datetime
 
