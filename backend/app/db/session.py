@@ -35,6 +35,9 @@ def prepare_sqlite_schema_for_poc() -> None:
         "production_date",
         "remarks",
         "full_string",
+        "hri",
+        "datamatrix_base64",
+        "gs1_128_base64",
         "created_at",
     }
 

@@ -30,6 +30,9 @@ class LabelHistory(Base):
     production_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_string: Mapped[str] = mapped_column(Text)
+    hri: Mapped[str] = mapped_column(Text)
+    datamatrix_base64: Mapped[str] = mapped_column(Text)
+    gs1_128_base64: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )

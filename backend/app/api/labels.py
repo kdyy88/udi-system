@@ -14,11 +14,37 @@ from app.schemas.label import (
     LabelHistoryResponse,
     LabelInput,
     LabelPreviewResponse,
+    LabelPreviewSvgResponse,
 )
-from app.services.barcode_gen import render_gs1_128_base64, render_gs1_datamatrix_base64
+from app.services.barcode_gen import (
+    render_gs1_128_base64,
+    render_gs1_128_svg,
+    render_gs1_datamatrix_base64,
+    render_gs1_datamatrix_svg,
+)
 from app.services.gs1_engine import build_gs1_element_string, build_hri_string
 
 router = APIRouter(prefix="/labels")
+
+
+def _build_gs1_and_hri(payload: LabelInput) -> tuple[str, str]:
+    gs1_element_string = build_gs1_element_string(
+        di=payload.di,
+        lot=payload.lot,
+        expiry=payload.expiry,
+        serial=payload.serial,
+    )
+    hri = build_hri_string(
+        di=payload.di,
+        lot=payload.lot,
+        expiry=payload.expiry,
+        serial=payload.serial,
+    )
+    return gs1_element_string, hri
+
+
+def _escaped_gs1(gs1_element_string: str) -> str:
+    return gs1_element_string.encode("unicode_escape").decode("utf-8")
 
 
 @router.get("/ping")
@@ -32,18 +58,7 @@ async def labels_ping() -> dict[str, str]:
 @router.post("/preview", response_model=LabelPreviewResponse)
 async def preview_label(payload: LabelInput) -> LabelPreviewResponse:
     try:
-        gs1_element_string = build_gs1_element_string(
-            di=payload.di,
-            lot=payload.lot,
-            expiry=payload.expiry,
-            serial=payload.serial,
-        )
-        hri = build_hri_string(
-            di=payload.di,
-            lot=payload.lot,
-            expiry=payload.expiry,
-            serial=payload.serial,
-        )
+        gs1_element_string, hri = _build_gs1_and_hri(payload)
         base64_png = render_gs1_datamatrix_base64(hri)
         gs1_128_base64 = render_gs1_128_base64(hri)
     except ValueError as exc:
@@ -53,9 +68,28 @@ async def preview_label(payload: LabelInput) -> LabelPreviewResponse:
         di=payload.di,
         hri=hri,
         gs1_element_string=gs1_element_string,
-        gs1_element_string_escaped=gs1_element_string.encode("unicode_escape").decode("utf-8"),
+        gs1_element_string_escaped=_escaped_gs1(gs1_element_string),
         datamatrix_base64=base64_png,
         gs1_128_base64=gs1_128_base64,
+    )
+
+
+@router.post("/preview-svg", response_model=LabelPreviewSvgResponse)
+async def preview_label_svg(payload: LabelInput) -> LabelPreviewSvgResponse:
+    try:
+        gs1_element_string, hri = _build_gs1_and_hri(payload)
+        datamatrix_svg = render_gs1_datamatrix_svg(hri)
+        gs1_128_svg = render_gs1_128_svg(hri)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return LabelPreviewSvgResponse(
+        di=payload.di,
+        hri=hri,
+        gs1_element_string=gs1_element_string,
+        gs1_element_string_escaped=_escaped_gs1(gs1_element_string),
+        datamatrix_svg=datamatrix_svg,
+        gs1_128_svg=gs1_128_svg,
     )
 
 
@@ -69,18 +103,7 @@ async def generate_label(
         raise HTTPException(status_code=404, detail="user_id not found")
 
     try:
-        gs1_element_string = build_gs1_element_string(
-            di=payload.di,
-            lot=payload.lot,
-            expiry=payload.expiry,
-            serial=payload.serial,
-        )
-        hri = build_hri_string(
-            di=payload.di,
-            lot=payload.lot,
-            expiry=payload.expiry,
-            serial=payload.serial,
-        )
+        gs1_element_string, hri = _build_gs1_and_hri(payload)
         base64_png = render_gs1_datamatrix_base64(hri)
         gs1_128_base64 = render_gs1_128_base64(hri)
     except ValueError as exc:
@@ -95,6 +118,9 @@ async def generate_label(
         production_date=payload.production_date,
         remarks=payload.remarks,
         full_string=gs1_element_string,
+        hri=hri,
+        datamatrix_base64=base64_png,
+        gs1_128_base64=gs1_128_base64,
     )
     db.add(history)
     db.commit()
@@ -106,7 +132,7 @@ async def generate_label(
         di=payload.di,
         hri=hri,
         gs1_element_string=gs1_element_string,
-        gs1_element_string_escaped=gs1_element_string.encode("unicode_escape").decode("utf-8"),
+        gs1_element_string_escaped=_escaped_gs1(gs1_element_string),
         datamatrix_base64=base64_png,
         gs1_128_base64=gs1_128_base64,
     )
@@ -147,6 +173,9 @@ async def list_label_history(
             production_date=row.production_date,
             remarks=row.remarks,
             full_string=row.full_string,
+            hri=row.hri,
+            datamatrix_base64=row.datamatrix_base64,
+            gs1_128_base64=row.gs1_128_base64,
             created_at=row.created_at,
         )
         for row in records

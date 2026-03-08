@@ -29,6 +29,15 @@ export type LabelGenerateResponse = LabelPreviewResponse & {
   created_at: string;
 };
 
+export type LabelPreviewSvgResponse = {
+  di: string;
+  hri: string;
+  gs1_element_string: string;
+  gs1_element_string_escaped: string;
+  datamatrix_svg: string;
+  gs1_128_svg: string;
+};
+
 export type LabelHistoryItem = {
   id: number;
   user_id: number;
@@ -39,6 +48,9 @@ export type LabelHistoryItem = {
   production_date: string | null;
   remarks: string | null;
   full_string: string;
+  hri: string;
+  datamatrix_base64: string;
+  gs1_128_base64: string;
   created_at: string;
 };
 

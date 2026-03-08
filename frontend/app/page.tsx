@@ -2,17 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 
 import { PageHeader } from "@/components/labels/PageHeader";
 import { LabelForm } from "@/components/labels/LabelForm";
 import { LabelHistorySection } from "@/components/labels/LabelHistorySection";
 import { PreviewDialog } from "@/components/labels/PreviewDialog";
 import { getAuthUser, type AuthUser } from "@/lib/auth";
-import { api } from "@/lib/api";
 import { useLabels } from "@/hooks/useLabels";
 import { useLabelHistory } from "@/hooks/useLabelHistory";
-import type { LabelHistoryItem, LabelPreviewResponse } from "@/types/udi";
+import type { LabelHistoryItem } from "@/types/udi";
 
 export default function Home() {
   const router = useRouter();
@@ -72,16 +70,15 @@ export default function Home() {
   const handleReview = async (row: LabelHistoryItem) => {
     setLoadingReviewId(row.id);
     try {
-      const response = await api.post<LabelPreviewResponse>("/api/v1/labels/preview", {
+      setPreview({
         di: row.gtin,
-        lot: row.batch_no,
-        expiry: row.expiry_date,
-        serial: row.serial_no,
+        hri: row.hri,
+        gs1_element_string: row.full_string,
+        gs1_element_string_escaped: row.full_string,
+        datamatrix_base64: row.datamatrix_base64,
+        gs1_128_base64: row.gs1_128_base64,
       });
-      setPreview(response.data);
       setDialogOpen(true);
-    } catch {
-      toast.error("重新预览失败");
     } finally {
       setLoadingReviewId(null);
     }
@@ -122,7 +119,6 @@ export default function Home() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         preview={preview}
-        lot=""
         expiryDate={expiryDate}
       />
     </main>

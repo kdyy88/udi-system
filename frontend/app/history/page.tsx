@@ -52,6 +52,7 @@ export default function HistoryPage() {
     try {
       const response = await api.get<LabelHistoryListResponse>('/api/v1/labels/history', {
         params: {
+          user_id: authUser?.user_id,
           gtin: gtin || undefined,
           batch_no: batchNo || undefined,
           page: targetPage,
@@ -76,16 +77,17 @@ export default function HistoryPage() {
 
   const handleReview = async (row: LabelHistoryItem) => {
     try {
-      const response = await api.post<LabelPreviewResponse>("/api/v1/labels/preview", {
+      setPreview({
         di: row.gtin,
-        lot: row.batch_no,
-        expiry: row.expiry_date,
-        serial: row.serial_no,
+        hri: row.hri,
+        gs1_element_string: row.full_string,
+        gs1_element_string_escaped: row.full_string,
+        datamatrix_base64: row.datamatrix_base64,
+        gs1_128_base64: row.gs1_128_base64,
       });
-      setPreview(response.data);
       setOpen(true);
     } catch {
-      toast.error("重新预览失败");
+      toast.error("打开历史预览失败");
     }
   };
 

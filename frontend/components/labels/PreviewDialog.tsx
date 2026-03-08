@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { Download, LayoutTemplate } from "lucide-react";
+import { useRef, useEffect } from "react";
+import { Download, LayoutTemplate, Zap } from "lucide-react";
 import { toPng, toSvg } from "html-to-image";
 import { jsPDF } from "jspdf";
 import { toast } from "sonner";
@@ -19,27 +19,95 @@ import {
   PREVIEW_TEMPLATES,
   type TemplateKey,
 } from "@/lib/preview-templates";
-import { toDisplayDate } from "@/lib/dateUtils";
-import type { LabelGenerateResponse, LabelPreviewResponse } from "@/types/udi";
+import { toDisplayDate, toYymmdd } from "@/lib/dateUtils";
+import type { LabelGenerateResponse, LabelPreviewResponse, LabelPreviewSvgResponse } from "@/types/udi";
 import { useMemo, useState } from "react";
+import { api } from "@/lib/api";
 
 type PreviewDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   preview: LabelGenerateResponse | LabelPreviewResponse | null;
-  lot: string;
   expiryDate: string;
 };
+
+type BarcodeFormat = "png" | "svg";
+
+// Helper to extract PI values from HRI string
+// HRI format: (01)09506000134352(17)280229(10)LOT202603(21)SN0001
+function extractPIFromHRI(hri: string): { lot?: string; expiry?: string; serial?: string } {
+  const result: { lot?: string; expiry?: string; serial?: string } = {};
+  
+  const matches = hri.matchAll(/\((\d+)\)([^()]+)/g);
+  for (const match of matches) {
+    const ai = match[1];
+    const value = match[2];
+    
+    if (ai === "10") result.lot = value;
+    else if (ai === "17") result.expiry = value;
+    else if (ai === "21") result.serial = value;
+  }
+  
+  return result;
+}
 
 export function PreviewDialog({
   open,
   onOpenChange,
   preview,
-  lot,
   expiryDate,
 }: PreviewDialogProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const [template, setTemplate] = useState<TemplateKey>(DEFAULT_TEMPLATE_KEY);
+  const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormat>("png");
+  const [svgPreview, setSvgPreview] = useState<LabelPreviewSvgResponse | null>(null);
+  const [loadingSvg, setLoadingSvg] = useState(false);
+
+  useEffect(() => {
+    setSvgPreview(null);
+    setBarcodeFormat("png");
+  }, [preview?.hri]);
+
+  // Fetch SVG preview when format is switched to SVG
+  useEffect(() => {
+    if (barcodeFormat === "svg" && preview && !svgPreview) {
+      setLoadingSvg(true);
+      
+      // Extract PI values from HRI string
+      const piValues = extractPIFromHRI(preview.hri);
+      
+      const payload: Record<string, string> = {
+        di: preview.di,
+      };
+      
+      // Include extracted PI values from HRI
+      if (piValues.lot) payload.lot = piValues.lot;
+      if (piValues.expiry) payload.expiry = piValues.expiry;
+      if (piValues.serial) payload.serial = piValues.serial;
+
+      // Fallback: use form expiry after normalization if HRI lacks AI(17)
+      if (!payload.expiry) {
+        const normalizedExpiry = toYymmdd(expiryDate);
+        if (normalizedExpiry) {
+          payload.expiry = normalizedExpiry;
+        }
+      }
+      
+      api
+        .post("/api/v1/labels/preview-svg", payload)
+        .then((res) => {
+          setSvgPreview(res.data);
+        })
+        .catch((err) => {
+          console.error("SVG preview error:", err.response?.data || err.message);
+          toast.error("加载SVG预览失败");
+          setBarcodeFormat("png");
+        })
+        .finally(() => {
+          setLoadingSvg(false);
+        });
+    }
+  }, [barcodeFormat, preview, svgPreview, expiryDate]);
 
   const selectedTemplate = useMemo(
     () => PREVIEW_TEMPLATES.find((item) => item.key === template),
@@ -143,6 +211,28 @@ export function PreviewDialog({
                 ))}
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+                  <Zap className="size-4" />
+                  条码
+                </span>
+                <Button
+                  size="sm"
+                  variant={barcodeFormat === "png" ? "default" : "outline"}
+                  onClick={() => setBarcodeFormat("png")}
+                  className="text-xs"
+                >
+                  PNG
+                </Button>
+                <Button
+                  size="sm"
+                  variant={barcodeFormat === "svg" ? "default" : "outline"}
+                  onClick={() => setBarcodeFormat("svg")}
+                  className="text-xs"
+                >
+                  SVG
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
                   variant="outline"
@@ -176,16 +266,35 @@ export function PreviewDialog({
 
             <div ref={previewRef} className="rounded-md border border-dashed p-2 sm:p-3 -mx-2 sm:mx-0 overflow-x-auto">
               <div className="inline-block min-w-full">
-                <PreviewTemplateCanvas
-                  template={template}
-                  preview={preview}
-                  lot={lot}
-                  expiryDisplay={toDisplayDate(
-                    expiryDate.split("-").length === 3
-                      ? `${expiryDate.split("-")[0].slice(-2)}${expiryDate.split("-")[1]}${expiryDate.split("-")[2]}`
-                      : undefined
-                  )}
-                />
+                {loadingSvg && barcodeFormat === "svg" ? (
+                  <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                    加载SVG中...
+                  </div>
+                ) : (
+                  <PreviewTemplateCanvas
+                    template={template}
+                    preview={
+                      barcodeFormat === "svg" && svgPreview
+                        ? {
+                            format: "svg",
+                            data: {
+                              hri: svgPreview.hri,
+                              datamatrix_svg: svgPreview.datamatrix_svg,
+                              gs1_128_svg: svgPreview.gs1_128_svg,
+                            },
+                          }
+                        : {
+                            format: "png",
+                            data: preview,
+                          }
+                    }
+                    expiryDisplay={toDisplayDate(
+                      expiryDate.split("-").length === 3
+                        ? `${expiryDate.split("-")[0].slice(-2)}${expiryDate.split("-")[1]}${expiryDate.split("-")[2]}`
+                        : undefined
+                    )}
+                  />
+                )}
               </div>
             </div>
 

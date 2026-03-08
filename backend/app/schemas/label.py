@@ -40,6 +40,9 @@ class LabelHistoryResponse(BaseModel):
     production_date: str | None
     remarks: str | None
     full_string: str
+    hri: str
+    datamatrix_base64: str
+    gs1_128_base64: str
     created_at: datetime
 
 
@@ -48,6 +51,15 @@ class LabelHistoryListResponse(BaseModel):
     page: int
     page_size: int
     items: list[LabelHistoryResponse]
+
+
+class LabelPreviewSvgResponse(BaseModel):
+    di: str
+    hri: str
+    gs1_element_string: str
+    gs1_element_string_escaped: str
+    datamatrix_svg: str
+    gs1_128_svg: str
 
 
 class LoginRequest(BaseModel):
