@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { getAuthUser } from "@/lib/auth";
 import type { LabelHistoryItem, LabelHistoryListResponse } from "@/types/udi";
 
 export function useLabelHistory() {
@@ -14,12 +15,19 @@ export function useLabelHistory() {
 
   const fetchHistory = useCallback(
     async (targetPage = 1, filterGtin = "", filterBatchNo = "") => {
+      const authUser = getAuthUser();
+      if (!authUser) {
+        toast.error("请先登录");
+        return;
+      }
+
       setLoadingHistory(true);
       try {
         const response = await api.get<LabelHistoryListResponse>(
           "/api/v1/labels/history",
           {
             params: {
+              user_id: authUser.user_id,
               gtin: filterGtin || undefined,
               batch_no: filterBatchNo || undefined,
               page: targetPage,
@@ -44,8 +52,18 @@ export function useLabelHistory() {
       return;
     }
 
+    const authUser = getAuthUser();
+    if (!authUser) {
+      toast.error("请先登录");
+      return;
+    }
+
     try {
-      await api.delete(`/api/v1/labels/history/${id}`);
+      await api.delete(`/api/v1/labels/history/${id}`, {
+        params: {
+          user_id: authUser.user_id,
+        },
+      });
       toast.success("删除成功");
       onSuccess();
     } catch {
