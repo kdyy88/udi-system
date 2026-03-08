@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: sqlite:///./data/udi.db
+      CORS_ORIGINS: ${CORS_ORIGINS}
     ports:
       - "${BACKEND_PORT:-18000}:8000"
     volumes:
