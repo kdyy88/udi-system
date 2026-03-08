@@ -1,0 +1,150 @@
+from datetime import UTC, datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db.models import LabelHistory, User
+from app.db.session import get_db
+from app.schemas.label import (
+    LabelCreateRequest,
+    LabelGenerateResponse,
+    LabelHistoryListResponse,
+    LabelHistoryResponse,
+    LabelInput,
+    LabelPreviewResponse,
+)
+from app.services.barcode_gen import render_gs1_128_base64, render_gs1_datamatrix_base64
+from app.services.gs1_engine import build_gs1_element_string, build_hri_string
+
+router = APIRouter(prefix="/labels")
+
+
+@router.get("/ping")
+async def labels_ping() -> dict[str, str]:
+    return {
+        "message": "labels module ready",
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+
+
+@router.post("/preview", response_model=LabelPreviewResponse)
+async def preview_label(payload: LabelInput) -> LabelPreviewResponse:
+    try:
+        gs1_element_string = build_gs1_element_string(
+            di=payload.di,
+            lot=payload.lot,
+            expiry=payload.expiry,
+            serial=payload.serial,
+        )
+        hri = build_hri_string(
+            di=payload.di,
+            lot=payload.lot,
+            expiry=payload.expiry,
+            serial=payload.serial,
+        )
+        base64_png = render_gs1_datamatrix_base64(hri)
+        gs1_128_base64 = render_gs1_128_base64(hri)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return LabelPreviewResponse(
+        di=payload.di,
+        hri=hri,
+        gs1_element_string=gs1_element_string,
+        gs1_element_string_escaped=gs1_element_string.encode("unicode_escape").decode("utf-8"),
+        datamatrix_base64=base64_png,
+        gs1_128_base64=gs1_128_base64,
+    )
+
+
+@router.post("/generate", response_model=LabelGenerateResponse)
+async def generate_label(
+    payload: LabelCreateRequest,
+    db: Session = Depends(get_db),
+) -> LabelGenerateResponse:
+    user = db.execute(select(User).where(User.id == payload.user_id)).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="user_id not found")
+
+    try:
+        gs1_element_string = build_gs1_element_string(
+            di=payload.di,
+            lot=payload.lot,
+            expiry=payload.expiry,
+            serial=payload.serial,
+        )
+        hri = build_hri_string(
+            di=payload.di,
+            lot=payload.lot,
+            expiry=payload.expiry,
+            serial=payload.serial,
+        )
+        base64_png = render_gs1_datamatrix_base64(hri)
+        gs1_128_base64 = render_gs1_128_base64(hri)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    history = LabelHistory(
+        user_id=payload.user_id,
+        gtin=payload.di,
+        batch_no=payload.lot,
+        expiry_date=payload.expiry,
+        serial_no=payload.serial,
+        full_string=gs1_element_string,
+    )
+    db.add(history)
+    db.commit()
+    db.refresh(history)
+
+    return LabelGenerateResponse(
+        history_id=history.id,
+        created_at=history.created_at,
+        di=payload.di,
+        hri=hri,
+        gs1_element_string=gs1_element_string,
+        gs1_element_string_escaped=gs1_element_string.encode("unicode_escape").decode("utf-8"),
+        datamatrix_base64=base64_png,
+        gs1_128_base64=gs1_128_base64,
+    )
+
+
+@router.get("/history", response_model=LabelHistoryListResponse)
+async def list_label_history(
+    db: Session = Depends(get_db),
+    gtin: Annotated[str | None, Query(min_length=14, max_length=14)] = None,
+    batch_no: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> LabelHistoryListResponse:
+    base_statement = select(LabelHistory)
+
+    if gtin:
+        base_statement = base_statement.where(LabelHistory.gtin == gtin)
+    if batch_no:
+        base_statement = base_statement.where(LabelHistory.batch_no == batch_no)
+
+    count_statement = select(func.count()).select_from(base_statement.subquery())
+    total = db.execute(count_statement).scalar_one()
+
+    statement = base_statement.order_by(LabelHistory.created_at.desc(), LabelHistory.id.desc())
+    statement = statement.offset((page - 1) * page_size).limit(page_size)
+
+    records = db.execute(statement).scalars().all()
+
+    items = [
+        LabelHistoryResponse(
+            id=row.id,
+            user_id=row.user_id,
+            gtin=row.gtin,
+            batch_no=row.batch_no,
+            expiry_date=row.expiry_date,
+            serial_no=row.serial_no,
+            full_string=row.full_string,
+            created_at=row.created_at,
+        )
+        for row in records
+    ]
+
+    return LabelHistoryListResponse(total=total, page=page, page_size=page_size, items=items)
