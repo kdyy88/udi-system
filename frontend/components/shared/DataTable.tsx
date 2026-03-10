@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { toDisplayDate } from "@/lib/dateUtils";
 import type { LabelHistoryItem } from "@/types/udi";
 
 type DataTableProps = {
@@ -50,7 +51,7 @@ export function DataTable({ rows, onReview, onDelete, loadingRowId, pagination }
                 <td className="px-3 py-2">{row.id}</td>
                 <td className="px-3 py-2 font-mono">{row.gtin}</td>
                 <td className="px-3 py-2">{row.batch_no ?? "-"}</td>
-                <td className="px-3 py-2">{row.expiry_date ?? "-"}</td>
+                <td className="px-3 py-2">{toDisplayDate(row.expiry_date)}</td>
                 <td className="px-3 py-2">{row.serial_no ?? "-"}</td>
                 <td className="px-3 py-2">{new Date(row.created_at).toLocaleString()}</td>
                 <td className="px-3 py-2 text-right">

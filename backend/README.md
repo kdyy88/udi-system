@@ -51,8 +51,9 @@ uv run python -m compileall .
 ```json
 {
 	"di": "09506000134352",
+	"production_date": "16/01/01",
 	"lot": "LOT202603",
-	"expiry": "280229",
+	"expiry": "28/02/29",
 	"serial": "SN0001"
 }
 ```
@@ -93,8 +94,9 @@ uv run python -m compileall .
 {
 	"user_id": 1,
 	"di": "09506000134352",
+	"production_date": "16/01/01",
 	"lot": "LOT202603",
-	"expiry": "280229",
+	"expiry": "28/02/29",
 	"serial": "SN0001"
 }
 ```

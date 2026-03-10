@@ -19,7 +19,7 @@ import {
   PREVIEW_TEMPLATES,
   type TemplateKey,
 } from "@/lib/preview-templates";
-import { toDisplayDate, toYymmdd } from "@/lib/dateUtils";
+import { toDisplayDate, toTransferDate } from "@/lib/dateUtils";
 import type { LabelGenerateResponse, LabelPreviewResponse, LabelPreviewSvgResponse } from "@/types/udi";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
@@ -34,9 +34,14 @@ type PreviewDialogProps = {
 type BarcodeFormat = "png" | "svg";
 
 // Helper to extract PI values from HRI string
-// HRI format: (01)09506000134352(17)280229(10)LOT202603(21)SN0001
-function extractPIFromHRI(hri: string): { lot?: string; expiry?: string; serial?: string } {
-  const result: { lot?: string; expiry?: string; serial?: string } = {};
+// HRI format: (01)09506000134352(11)160101(17)280229(10)LOT202603(21)SN0001
+function extractPIFromHRI(hri: string): {
+  lot?: string;
+  expiry?: string;
+  serial?: string;
+  productionDate?: string;
+} {
+  const result: { lot?: string; expiry?: string; serial?: string; productionDate?: string } = {};
   
   const matches = hri.matchAll(/\((\d+)\)([^()]+)/g);
   for (const match of matches) {
@@ -44,11 +49,33 @@ function extractPIFromHRI(hri: string): { lot?: string; expiry?: string; serial?
     const value = match[2];
     
     if (ai === "10") result.lot = value;
+    else if (ai === "11") result.productionDate = value;
     else if (ai === "17") result.expiry = value;
     else if (ai === "21") result.serial = value;
   }
   
   return result;
+}
+
+function buildPreviewPayload(di: string, hri: string, expiryDate: string): Record<string, string> {
+  const piValues = extractPIFromHRI(hri);
+  const payload: Record<string, string> = { di };
+
+  if (piValues.lot) payload.lot = piValues.lot;
+  if (piValues.expiry) payload.expiry = toTransferDate(piValues.expiry) ?? piValues.expiry;
+  if (piValues.productionDate) {
+    payload.production_date = toTransferDate(piValues.productionDate) ?? piValues.productionDate;
+  }
+  if (piValues.serial) payload.serial = piValues.serial;
+
+  if (!payload.expiry) {
+    const normalizedExpiry = toTransferDate(expiryDate);
+    if (normalizedExpiry) {
+      payload.expiry = normalizedExpiry;
+    }
+  }
+
+  return payload;
 }
 
 export function PreviewDialog({
@@ -61,52 +88,62 @@ export function PreviewDialog({
   const [template, setTemplate] = useState<TemplateKey>(DEFAULT_TEMPLATE_KEY);
   const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormat>("png");
   const [svgPreview, setSvgPreview] = useState<LabelPreviewSvgResponse | null>(null);
+  const [pngEnhancedPreview, setPngEnhancedPreview] = useState<LabelPreviewResponse | null>(null);
   const [loadingSvg, setLoadingSvg] = useState(false);
 
   useEffect(() => {
-    setSvgPreview(null);
-    setBarcodeFormat("png");
-  }, [preview?.hri]);
+    if (!preview) {
+      return;
+    }
+
+    const needsEnhancedPng =
+      !preview.gs1_128_di_only_base64 || !preview.gs1_128_pi_only_base64;
+
+    if (!needsEnhancedPng || pngEnhancedPreview?.hri === preview.hri) {
+      return;
+    }
+
+    const fetchEnhancedPngPreview = async () => {
+      try {
+        const payload = buildPreviewPayload(preview.di, preview.hri, expiryDate);
+        const res = await api.post<LabelPreviewResponse>("/api/v1/labels/preview", payload);
+        setPngEnhancedPreview(res.data);
+      } catch {
+        // keep fallback behavior with original preview data
+      }
+    };
+
+    void fetchEnhancedPngPreview();
+  }, [preview, pngEnhancedPreview, expiryDate]);
 
   // Fetch SVG preview when format is switched to SVG
   useEffect(() => {
-    if (barcodeFormat === "svg" && preview && !svgPreview) {
-      setLoadingSvg(true);
-      
-      // Extract PI values from HRI string
-      const piValues = extractPIFromHRI(preview.hri);
-      
-      const payload: Record<string, string> = {
-        di: preview.di,
-      };
-      
-      // Include extracted PI values from HRI
-      if (piValues.lot) payload.lot = piValues.lot;
-      if (piValues.expiry) payload.expiry = piValues.expiry;
-      if (piValues.serial) payload.serial = piValues.serial;
-
-      // Fallback: use form expiry after normalization if HRI lacks AI(17)
-      if (!payload.expiry) {
-        const normalizedExpiry = toYymmdd(expiryDate);
-        if (normalizedExpiry) {
-          payload.expiry = normalizedExpiry;
-        }
-      }
-      
-      api
-        .post("/api/v1/labels/preview-svg", payload)
-        .then((res) => {
-          setSvgPreview(res.data);
-        })
-        .catch((err) => {
-          console.error("SVG preview error:", err.response?.data || err.message);
-          toast.error("加载SVG预览失败");
-          setBarcodeFormat("png");
-        })
-        .finally(() => {
-          setLoadingSvg(false);
-        });
+    if (barcodeFormat !== "svg" || !preview) {
+      return;
     }
+
+    if (svgPreview?.hri === preview.hri) {
+      return;
+    }
+
+    const fetchSvgPreview = async () => {
+      setLoadingSvg(true);
+      const payload = buildPreviewPayload(preview.di, preview.hri, expiryDate);
+
+      try {
+        const res = await api.post<LabelPreviewSvgResponse>("/api/v1/labels/preview-svg", payload);
+        setSvgPreview(res.data);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.error("SVG preview error:", message);
+        toast.error("加载SVG预览失败");
+        setBarcodeFormat("png");
+      } finally {
+        setLoadingSvg(false);
+      }
+    };
+
+    void fetchSvgPreview();
   }, [barcodeFormat, preview, svgPreview, expiryDate]);
 
   const selectedTemplate = useMemo(
@@ -281,18 +318,27 @@ export function PreviewDialog({
                               hri: svgPreview.hri,
                               datamatrix_svg: svgPreview.datamatrix_svg,
                               gs1_128_svg: svgPreview.gs1_128_svg,
+                              gs1_128_di_only_svg: svgPreview.gs1_128_di_only_svg,
+                              gs1_128_pi_only_svg: svgPreview.gs1_128_pi_only_svg,
                             },
                           }
                         : {
                             format: "png",
-                            data: preview,
+                            data:
+                              pngEnhancedPreview?.hri === preview.hri
+                                ? {
+                                    ...preview,
+                                    gs1_128_di_only_base64:
+                                      pngEnhancedPreview.gs1_128_di_only_base64 ??
+                                      preview.gs1_128_di_only_base64,
+                                    gs1_128_pi_only_base64:
+                                      pngEnhancedPreview.gs1_128_pi_only_base64 ??
+                                      preview.gs1_128_pi_only_base64,
+                                  }
+                                : preview,
                           }
                     }
-                    expiryDisplay={toDisplayDate(
-                      expiryDate.split("-").length === 3
-                        ? `${expiryDate.split("-")[0].slice(-2)}${expiryDate.split("-")[1]}${expiryDate.split("-")[2]}`
-                        : undefined
-                    )}
+                    expiryDisplay={toDisplayDate(expiryDate)}
                   />
                 )}
               </div>

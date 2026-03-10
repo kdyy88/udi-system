@@ -33,18 +33,33 @@ def _build_gs1_and_hri(payload: LabelInput) -> tuple[str, str]:
         lot=payload.lot,
         expiry=payload.expiry,
         serial=payload.serial,
+        production_date=payload.production_date,
     )
     hri = build_hri_string(
         di=payload.di,
         lot=payload.lot,
         expiry=payload.expiry,
         serial=payload.serial,
+        production_date=payload.production_date,
     )
     return gs1_element_string, hri
 
 
 def _escaped_gs1(gs1_element_string: str) -> str:
     return gs1_element_string.encode("unicode_escape").decode("utf-8")
+
+
+def _build_dual_hri(payload: LabelInput) -> tuple[str, str | None]:
+    di_only_hri = f"(01){payload.di}"
+    full_without_serial = build_hri_string(
+        di=payload.di,
+        lot=payload.lot,
+        expiry=payload.expiry,
+        serial=None,
+        production_date=payload.production_date,
+    )
+    pi_only_hri = full_without_serial.removeprefix(di_only_hri)
+    return di_only_hri, (pi_only_hri or None)
 
 
 @router.get("/ping")
@@ -61,6 +76,11 @@ async def preview_label(payload: LabelInput) -> LabelPreviewResponse:
         gs1_element_string, hri = _build_gs1_and_hri(payload)
         base64_png = render_gs1_datamatrix_base64(hri)
         gs1_128_base64 = render_gs1_128_base64(hri)
+        di_only_hri, pi_only_hri = _build_dual_hri(payload)
+        gs1_128_di_only_base64 = render_gs1_128_base64(di_only_hri)
+        gs1_128_pi_only_base64 = (
+            render_gs1_128_base64(pi_only_hri) if pi_only_hri else None
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -71,6 +91,8 @@ async def preview_label(payload: LabelInput) -> LabelPreviewResponse:
         gs1_element_string_escaped=_escaped_gs1(gs1_element_string),
         datamatrix_base64=base64_png,
         gs1_128_base64=gs1_128_base64,
+        gs1_128_di_only_base64=gs1_128_di_only_base64,
+        gs1_128_pi_only_base64=gs1_128_pi_only_base64,
     )
 
 
@@ -80,6 +102,9 @@ async def preview_label_svg(payload: LabelInput) -> LabelPreviewSvgResponse:
         gs1_element_string, hri = _build_gs1_and_hri(payload)
         datamatrix_svg = render_gs1_datamatrix_svg(hri)
         gs1_128_svg = render_gs1_128_svg(hri)
+        di_only_hri, pi_only_hri = _build_dual_hri(payload)
+        gs1_128_di_only_svg = render_gs1_128_svg(di_only_hri)
+        gs1_128_pi_only_svg = render_gs1_128_svg(pi_only_hri) if pi_only_hri else None
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -90,6 +115,8 @@ async def preview_label_svg(payload: LabelInput) -> LabelPreviewSvgResponse:
         gs1_element_string_escaped=_escaped_gs1(gs1_element_string),
         datamatrix_svg=datamatrix_svg,
         gs1_128_svg=gs1_128_svg,
+        gs1_128_di_only_svg=gs1_128_di_only_svg,
+        gs1_128_pi_only_svg=gs1_128_pi_only_svg,
     )
 
 
@@ -106,6 +133,11 @@ async def generate_label(
         gs1_element_string, hri = _build_gs1_and_hri(payload)
         base64_png = render_gs1_datamatrix_base64(hri)
         gs1_128_base64 = render_gs1_128_base64(hri)
+        di_only_hri, pi_only_hri = _build_dual_hri(payload)
+        gs1_128_di_only_base64 = render_gs1_128_base64(di_only_hri)
+        gs1_128_pi_only_base64 = (
+            render_gs1_128_base64(pi_only_hri) if pi_only_hri else None
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -135,6 +167,8 @@ async def generate_label(
         gs1_element_string_escaped=_escaped_gs1(gs1_element_string),
         datamatrix_base64=base64_png,
         gs1_128_base64=gs1_128_base64,
+        gs1_128_di_only_base64=gs1_128_di_only_base64,
+        gs1_128_pi_only_base64=gs1_128_pi_only_base64,
     )
 
 

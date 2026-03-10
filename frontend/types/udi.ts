@@ -22,6 +22,8 @@ export type LabelPreviewResponse = {
   gs1_element_string_escaped: string;
   datamatrix_base64: string;
   gs1_128_base64: string;
+  gs1_128_di_only_base64?: string | null;
+  gs1_128_pi_only_base64?: string | null;
 };
 
 export type LabelGenerateResponse = LabelPreviewResponse & {
@@ -36,6 +38,8 @@ export type LabelPreviewSvgResponse = {
   gs1_element_string_escaped: string;
   datamatrix_svg: string;
   gs1_128_svg: string;
+  gs1_128_di_only_svg?: string | null;
+  gs1_128_pi_only_svg?: string | null;
 };
 
 export type LabelHistoryItem = {

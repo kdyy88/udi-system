@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { toYymmdd } from "@/lib/dateUtils";
+import { toTransferDate } from "@/lib/dateUtils";
 import type {
   LabelGenerateResponse,
   LabelPreviewResponse,
@@ -43,9 +43,9 @@ export function useLabels() {
           user_id: authUser.user_id,
           di: formData.di,
           lot: formData.lot || null,
-          expiry: toYymmdd(formData.expiryDate) ?? null,
+          expiry: toTransferDate(formData.expiryDate) ?? null,
           serial: formData.serial || null,
-          production_date: formData.productionDate || null,
+          production_date: toTransferDate(formData.productionDate) ?? null,
           remarks: formData.remarks || null,
         }
       );

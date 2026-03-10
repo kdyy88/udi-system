@@ -33,7 +33,7 @@ export default function Home() {
 
   const [filterGtin, setFilterGtin] = useState("");
   const [filterBatchNo, setFilterBatchNo] = useState("");
-  const [expiryDate, setExpiryDate] = useState("2028-02-29");
+  const [expiryDate, setExpiryDate] = useState("28/02/29");
 
   useEffect(() => {
     const user = getAuthUser();
@@ -70,6 +70,7 @@ export default function Home() {
   const handleReview = async (row: LabelHistoryItem) => {
     setLoadingReviewId(row.id);
     try {
+      setExpiryDate(row.expiry_date ?? "");
       setPreview({
         di: row.gtin,
         hri: row.hri,

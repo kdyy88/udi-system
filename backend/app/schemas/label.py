@@ -1,6 +1,33 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _normalize_transfer_date(value: str, field_name: str) -> str:
+    raw = value.strip()
+
+    if len(raw) == 8 and raw[2] == "/" and raw[5] == "/":
+        yy, mm, dd = raw.split("/")
+        if yy.isdigit() and mm.isdigit() and dd.isdigit():
+            if 1 <= int(mm) <= 12 and 1 <= int(dd) <= 31:
+                return raw
+        raise ValueError(f"{field_name} must be YY/MM/DD")
+
+    if len(raw) == 6 and raw.isdigit():
+        mm = int(raw[2:4])
+        dd = int(raw[4:6])
+        if 1 <= mm <= 12 and 1 <= dd <= 31:
+            return f"{raw[:2]}/{raw[2:4]}/{raw[4:6]}"
+        raise ValueError(f"{field_name} must be YY/MM/DD")
+
+    if len(raw) == 10 and raw[4] == "-" and raw[7] == "-":
+        yyyy, mm, dd = raw.split("-")
+        if yyyy.isdigit() and mm.isdigit() and dd.isdigit():
+            if 1 <= int(mm) <= 12 and 1 <= int(dd) <= 31:
+                return f"{yyyy[-2:]}/{mm}/{dd}"
+        raise ValueError(f"{field_name} must be YY/MM/DD")
+
+    raise ValueError(f"{field_name} must be YY/MM/DD")
 
 
 class LabelInput(BaseModel):
@@ -10,6 +37,13 @@ class LabelInput(BaseModel):
     serial: str | None = None
     production_date: str | None = None
     remarks: str | None = None
+
+    @field_validator("expiry", "production_date", mode="before")
+    @classmethod
+    def normalize_date_fields(cls, value: str | None, info) -> str | None:
+        if value is None or value == "":
+            return None
+        return _normalize_transfer_date(str(value), info.field_name)
 
 
 class LabelCreateRequest(LabelInput):
@@ -23,6 +57,8 @@ class LabelPreviewResponse(BaseModel):
     gs1_element_string_escaped: str
     datamatrix_base64: str
     gs1_128_base64: str
+    gs1_128_di_only_base64: str | None = None
+    gs1_128_pi_only_base64: str | None = None
 
 
 class LabelGenerateResponse(LabelPreviewResponse):
@@ -60,6 +96,8 @@ class LabelPreviewSvgResponse(BaseModel):
     gs1_element_string_escaped: str
     datamatrix_svg: str
     gs1_128_svg: str
+    gs1_128_di_only_svg: str | None = None
+    gs1_128_pi_only_svg: str | None = None
 
 
 class LoginRequest(BaseModel):

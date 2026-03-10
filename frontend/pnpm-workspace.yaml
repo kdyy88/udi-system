@@ -1,3 +1,5 @@
 ignoredBuiltDependencies:
+  - core-js
+  - msw
   - sharp
   - unrs-resolver

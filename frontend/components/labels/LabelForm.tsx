@@ -18,9 +18,10 @@ type LabelFormProps = {
 };
 
 export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
+  const currentYear = new Date().getFullYear();
   const [di, setDi] = useState("09506000134352");
   const [lot, setLot] = useState("LOT202603");
-  const [expiryDate, setExpiryDate] = useState("2028-02-29");
+  const [expiryDate, setExpiryDate] = useState("28/02/29");
   const [serial, setSerial] = useState("SN0001");
   const [productionDate, setProductionDate] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -43,9 +44,13 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
   };
 
   return (
-    <section className="rounded-xl border p-4 sm:p-5">
-      <h2 className="text-lg font-semibold">标签录入表单</h2>
-      <form className="mt-4 grid gap-3 sm:gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
+    <section className="rounded-xl border bg-card p-4 shadow-sm sm:p-6">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">标签录入表单</h2>
+        <p className="text-sm text-muted-foreground">请填写 UDI 标签信息并生成条码</p>
+      </div>
+
+      <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
         <div className="space-y-2">
           <label className="text-sm font-medium">DI / GTIN-14</label>
           <Input
@@ -56,7 +61,9 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
             placeholder="09506000134352"
             required
           />
+          <p className="text-xs text-muted-foreground">固定 14 位数字</p>
         </div>
+
         <div className="space-y-2">
           <label className="text-sm font-medium">PI(10) 批号</label>
           <Input
@@ -67,9 +74,24 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">PI(17) 有效期</label>
-          <DatePicker value={expiryDate} onChange={setExpiryDate} />
+          <label className="text-sm font-medium">PI(11) 生产日期</label>
+          <DatePicker
+            value={productionDate}
+            onChange={setProductionDate}
+            placeholder="选择生产日期"
+          />
         </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium">PI(17) 有效期</label>
+          <DatePicker
+            value={expiryDate}
+            onChange={setExpiryDate}
+            placeholder="选择有效期"
+            toYear={currentYear + 20}
+          />
+        </div>
+
         <div className="space-y-2">
           <label className="text-sm font-medium">PI(21) 序列号</label>
           <Input
@@ -79,12 +101,7 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
           />
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium">生产日期</label>
-          <DatePicker value={productionDate} onChange={setProductionDate} />
-        </div>
-
-        <div className="space-y-2">
+        <div className="space-y-2 sm:col-span-2">
           <label className="text-sm font-medium">备注</label>
           <Input
             value={remarks}
@@ -93,8 +110,13 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
           />
         </div>
 
-        <div className="sm:col-span-2">
-          <Button type="submit" disabled={isLoading}>
+        <div className="flex items-center justify-end sm:col-span-2">
+          <Button
+            type="submit"
+            size="lg"
+            className="min-w-36 shadow-md transition-shadow hover:shadow-lg"
+            disabled={isLoading}
+          >
             {isLoading ? "生成中..." : "生成"}
           </Button>
         </div>
