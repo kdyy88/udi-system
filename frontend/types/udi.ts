@@ -53,9 +53,12 @@ export type LabelHistoryItem = {
   remarks: string | null;
   full_string: string;
   hri: string;
+  created_at: string;
+};
+
+export type LabelHistoryDetail = LabelHistoryItem & {
   datamatrix_base64: string;
   gs1_128_base64: string;
-  created_at: string;
 };
 
 export type LabelHistoryListResponse = {

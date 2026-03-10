@@ -11,6 +11,9 @@ import { getAuthUser, type AuthUser } from "@/lib/auth";
 import { useLabels } from "@/hooks/useLabels";
 import { useLabelHistory } from "@/hooks/useLabelHistory";
 import type { LabelHistoryItem } from "@/types/udi";
+import { api } from "@/lib/api";
+import { LABELS_API_ROUTES } from "@/features/labels/api/routes";
+import type { LabelHistoryDetail } from "@/types/udi";
 
 export default function Home() {
   const router = useRouter();
@@ -62,7 +65,7 @@ export default function Home() {
     const success = await handleGenerate(formData, authUser);
     if (success) {
       setExpiryDate(formData.expiryDate);
-      await fetchHistory(1, filterGtin, filterBatchNo);
+      void fetchHistory(1, filterGtin, filterBatchNo);
     }
     return success;
   };
@@ -70,14 +73,22 @@ export default function Home() {
   const handleReview = async (row: LabelHistoryItem) => {
     setLoadingReviewId(row.id);
     try {
+      const detail = await api.get<LabelHistoryDetail>(
+        LABELS_API_ROUTES.historyDetail(row.id),
+        {
+          params: {
+            user_id: authUser?.user_id,
+          },
+        }
+      );
       setExpiryDate(row.expiry_date ?? "");
       setPreview({
         di: row.gtin,
         hri: row.hri,
         gs1_element_string: row.full_string,
         gs1_element_string_escaped: row.full_string,
-        datamatrix_base64: row.datamatrix_base64,
-        gs1_128_base64: row.gs1_128_base64,
+        datamatrix_base64: detail.data.datamatrix_base64,
+        gs1_128_base64: detail.data.gs1_128_base64,
       });
       setDialogOpen(true);
     } finally {

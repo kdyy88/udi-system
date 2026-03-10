@@ -4,6 +4,7 @@ services:
       context: ./backend
     container_name: gs1-udi-backend
     restart: unless-stopped
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${BACKEND_WORKERS:-2}"]
     environment:
       DATABASE_URL: sqlite:///./data/udi.db
       CORS_ORIGINS: ${CORS_ORIGINS}
@@ -17,7 +18,7 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://127.0.0.1:18000}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
     container_name: gs1-udi-frontend
     restart: unless-stopped
     depends_on:

@@ -54,6 +54,11 @@ export function PreviewDialog({
     [template]
   );
 
+  const loadingPng =
+    barcodeFormat === "png" &&
+    !!preview &&
+    (!previewForPng?.datamatrix_base64 || !previewForPng?.gs1_128_base64);
+
   const previewMeta = useMemo(() => {
     if (!preview) {
       return null;
@@ -164,6 +169,10 @@ export function PreviewDialog({
                 {loadingSvg && barcodeFormat === "svg" ? (
                   <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
                     加载SVG中...
+                  </div>
+                ) : loadingPng ? (
+                  <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                    加载PNG中...
                   </div>
                 ) : (
                   <PreviewTemplateCanvas

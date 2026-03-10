@@ -34,7 +34,11 @@ export function useLabelPreviewOrchestrator({
       return;
     }
 
-    const needsEnhancedPng = !preview.gs1_128_di_only_base64 || !preview.gs1_128_pi_only_base64;
+    const needsEnhancedPng =
+      !preview.datamatrix_base64 ||
+      !preview.gs1_128_base64 ||
+      !preview.gs1_128_di_only_base64 ||
+      !preview.gs1_128_pi_only_base64;
 
     if (!needsEnhancedPng || pngEnhancedPreview?.hri === preview.hri) {
       return;
@@ -86,6 +90,8 @@ export function useLabelPreviewOrchestrator({
     preview && pngEnhancedPreview?.hri === preview.hri
       ? {
           ...preview,
+          datamatrix_base64: pngEnhancedPreview.datamatrix_base64,
+          gs1_128_base64: pngEnhancedPreview.gs1_128_base64,
           gs1_128_di_only_base64:
             pngEnhancedPreview.gs1_128_di_only_base64 ?? preview.gs1_128_di_only_base64,
           gs1_128_pi_only_base64:

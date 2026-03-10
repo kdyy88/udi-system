@@ -17,7 +17,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { LABELS_API_ROUTES } from "@/features/labels/api/routes";
 import type {
+  LabelHistoryDetail,
   LabelHistoryItem,
   LabelHistoryListResponse,
   LabelPreviewResponse,
@@ -50,7 +52,7 @@ export default function HistoryPage() {
   const loadHistory = async (targetPage = 1) => {
     setLoading(true);
     try {
-      const response = await api.get<LabelHistoryListResponse>('/api/v1/labels/history', {
+      const response = await api.get<LabelHistoryListResponse>(LABELS_API_ROUTES.history, {
         params: {
           user_id: authUser?.user_id,
           gtin: gtin || undefined,
@@ -77,13 +79,21 @@ export default function HistoryPage() {
 
   const handleReview = async (row: LabelHistoryItem) => {
     try {
+      const detail = await api.get<LabelHistoryDetail>(
+        LABELS_API_ROUTES.historyDetail(row.id),
+        {
+          params: {
+            user_id: authUser?.user_id,
+          },
+        }
+      );
       setPreview({
         di: row.gtin,
         hri: row.hri,
         gs1_element_string: row.full_string,
         gs1_element_string_escaped: row.full_string,
-        datamatrix_base64: row.datamatrix_base64,
-        gs1_128_base64: row.gs1_128_base64,
+        datamatrix_base64: detail.data.datamatrix_base64,
+        gs1_128_base64: detail.data.gs1_128_base64,
       });
       setOpen(true);
     } catch {

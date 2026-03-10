@@ -77,9 +77,12 @@ class LabelHistoryResponse(BaseModel):
     remarks: str | None
     full_string: str
     hri: str
+    created_at: datetime
+
+
+class LabelHistoryDetailResponse(LabelHistoryResponse):
     datamatrix_base64: str
     gs1_128_base64: str
-    created_at: datetime
 
 
 class LabelHistoryListResponse(BaseModel):
