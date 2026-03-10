@@ -1,9 +1,7 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef } from "react";
 import { Download, LayoutTemplate, Zap } from "lucide-react";
-import { toPng, toSvg } from "html-to-image";
-import { jsPDF } from "jspdf";
 import { toast } from "sonner";
 import { PreviewTemplateCanvas } from "./PreviewTemplateCanvas";
 import { Button } from "@/components/ui/button";
@@ -19,10 +17,14 @@ import {
   PREVIEW_TEMPLATES,
   type TemplateKey,
 } from "@/lib/preview-templates";
-import { toDisplayDate, toTransferDate } from "@/lib/dateUtils";
-import type { LabelGenerateResponse, LabelPreviewResponse, LabelPreviewSvgResponse } from "@/types/udi";
+import { toDisplayDate } from "@/lib/dateUtils";
+import type { LabelGenerateResponse, LabelPreviewResponse } from "@/types/udi";
 import { useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import {
+  type PreviewBarcodeFormat,
+  useLabelPreviewOrchestrator,
+} from "@/features/labels/preview/useLabelPreviewOrchestrator";
+import { exportPreviewNode, type PreviewExportFormat } from "@/features/labels/preview/export";
 
 type PreviewDialogProps = {
   open: boolean;
@@ -30,53 +32,6 @@ type PreviewDialogProps = {
   preview: LabelGenerateResponse | LabelPreviewResponse | null;
   expiryDate: string;
 };
-
-type BarcodeFormat = "png" | "svg";
-
-// Helper to extract PI values from HRI string
-// HRI format: (01)09506000134352(11)160101(17)280229(10)LOT202603(21)SN0001
-function extractPIFromHRI(hri: string): {
-  lot?: string;
-  expiry?: string;
-  serial?: string;
-  productionDate?: string;
-} {
-  const result: { lot?: string; expiry?: string; serial?: string; productionDate?: string } = {};
-  
-  const matches = hri.matchAll(/\((\d+)\)([^()]+)/g);
-  for (const match of matches) {
-    const ai = match[1];
-    const value = match[2];
-    
-    if (ai === "10") result.lot = value;
-    else if (ai === "11") result.productionDate = value;
-    else if (ai === "17") result.expiry = value;
-    else if (ai === "21") result.serial = value;
-  }
-  
-  return result;
-}
-
-function buildPreviewPayload(di: string, hri: string, expiryDate: string): Record<string, string> {
-  const piValues = extractPIFromHRI(hri);
-  const payload: Record<string, string> = { di };
-
-  if (piValues.lot) payload.lot = piValues.lot;
-  if (piValues.expiry) payload.expiry = toTransferDate(piValues.expiry) ?? piValues.expiry;
-  if (piValues.productionDate) {
-    payload.production_date = toTransferDate(piValues.productionDate) ?? piValues.productionDate;
-  }
-  if (piValues.serial) payload.serial = piValues.serial;
-
-  if (!payload.expiry) {
-    const normalizedExpiry = toTransferDate(expiryDate);
-    if (normalizedExpiry) {
-      payload.expiry = normalizedExpiry;
-    }
-  }
-
-  return payload;
-}
 
 export function PreviewDialog({
   open,
@@ -86,65 +41,13 @@ export function PreviewDialog({
 }: PreviewDialogProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const [template, setTemplate] = useState<TemplateKey>(DEFAULT_TEMPLATE_KEY);
-  const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormat>("png");
-  const [svgPreview, setSvgPreview] = useState<LabelPreviewSvgResponse | null>(null);
-  const [pngEnhancedPreview, setPngEnhancedPreview] = useState<LabelPreviewResponse | null>(null);
-  const [loadingSvg, setLoadingSvg] = useState(false);
-
-  useEffect(() => {
-    if (!preview) {
-      return;
-    }
-
-    const needsEnhancedPng =
-      !preview.gs1_128_di_only_base64 || !preview.gs1_128_pi_only_base64;
-
-    if (!needsEnhancedPng || pngEnhancedPreview?.hri === preview.hri) {
-      return;
-    }
-
-    const fetchEnhancedPngPreview = async () => {
-      try {
-        const payload = buildPreviewPayload(preview.di, preview.hri, expiryDate);
-        const res = await api.post<LabelPreviewResponse>("/api/v1/labels/preview", payload);
-        setPngEnhancedPreview(res.data);
-      } catch {
-        // keep fallback behavior with original preview data
-      }
-    };
-
-    void fetchEnhancedPngPreview();
-  }, [preview, pngEnhancedPreview, expiryDate]);
-
-  // Fetch SVG preview when format is switched to SVG
-  useEffect(() => {
-    if (barcodeFormat !== "svg" || !preview) {
-      return;
-    }
-
-    if (svgPreview?.hri === preview.hri) {
-      return;
-    }
-
-    const fetchSvgPreview = async () => {
-      setLoadingSvg(true);
-      const payload = buildPreviewPayload(preview.di, preview.hri, expiryDate);
-
-      try {
-        const res = await api.post<LabelPreviewSvgResponse>("/api/v1/labels/preview-svg", payload);
-        setSvgPreview(res.data);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "unknown error";
-        console.error("SVG preview error:", message);
-        toast.error("加载SVG预览失败");
-        setBarcodeFormat("png");
-      } finally {
-        setLoadingSvg(false);
-      }
-    };
-
-    void fetchSvgPreview();
-  }, [barcodeFormat, preview, svgPreview, expiryDate]);
+  const [barcodeFormat, setBarcodeFormat] = useState<PreviewBarcodeFormat>("png");
+  const { svgPreview, loadingSvg, previewForPng } = useLabelPreviewOrchestrator({
+    preview,
+    expiryDate,
+    barcodeFormat,
+    onSvgPreviewError: () => setBarcodeFormat("png"),
+  });
 
   const selectedTemplate = useMemo(
     () => PREVIEW_TEMPLATES.find((item) => item.key === template),
@@ -161,59 +64,14 @@ export function PreviewDialog({
     ];
   }, [preview]);
 
-  const downloadByDataUrl = (dataUrl: string, filename: string) => {
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = filename;
-    link.click();
-  };
-
-  const handleDownload = async (format: "png" | "svg" | "pdf") => {
+  const handleDownload = async (format: PreviewExportFormat) => {
     if (!previewRef.current) {
       toast.error("暂无可下载的预览内容");
       return;
     }
 
     try {
-      if (format === "png") {
-        const dataUrl = await toPng(previewRef.current, {
-          backgroundColor: "transparent",
-          pixelRatio: 2,
-          cacheBust: true,
-        });
-        downloadByDataUrl(dataUrl, `udi-${template}.png`);
-        return;
-      }
-
-      if (format === "svg") {
-        const dataUrl = await toSvg(previewRef.current, {
-          backgroundColor: "transparent",
-          cacheBust: true,
-        });
-        downloadByDataUrl(dataUrl, `udi-${template}.svg`);
-        return;
-      }
-
-      const pngDataUrl = await toPng(previewRef.current, {
-        backgroundColor: "#ffffff",
-        pixelRatio: 2,
-        cacheBust: true,
-      });
-
-      const image = new Image();
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = () => reject(new Error("load image failed"));
-        image.src = pngDataUrl;
-      });
-
-      const pdf = new jsPDF({
-        orientation: image.width > image.height ? "landscape" : "portrait",
-        unit: "pt",
-        format: [image.width, image.height],
-      });
-      pdf.addImage(pngDataUrl, "PNG", 0, 0, image.width, image.height);
-      pdf.save(`udi-${template}.pdf`);
+      await exportPreviewNode(previewRef.current, template, format);
     } catch {
       toast.error("下载失败，请重试");
     }
@@ -324,18 +182,7 @@ export function PreviewDialog({
                           }
                         : {
                             format: "png",
-                            data:
-                              pngEnhancedPreview?.hri === preview.hri
-                                ? {
-                                    ...preview,
-                                    gs1_128_di_only_base64:
-                                      pngEnhancedPreview.gs1_128_di_only_base64 ??
-                                      preview.gs1_128_di_only_base64,
-                                    gs1_128_pi_only_base64:
-                                      pngEnhancedPreview.gs1_128_pi_only_base64 ??
-                                      preview.gs1_128_pi_only_base64,
-                                  }
-                                : preview,
+                            data: previewForPng ?? preview,
                           }
                     }
                     expiryDisplay={toDisplayDate(expiryDate)}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { toTransferDate } from "@/lib/dateUtils";
+import { LABELS_API_ROUTES } from "@/features/labels/api/routes";
 import type {
   LabelGenerateResponse,
   LabelPreviewResponse,
@@ -38,7 +39,7 @@ export function useLabels() {
     setLoadingGenerate(true);
     try {
       const generateRes = await api.post<LabelGenerateResponse>(
-        "/api/v1/labels/generate",
+        LABELS_API_ROUTES.generate,
         {
           user_id: authUser.user_id,
           di: formData.di,

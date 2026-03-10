@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { getAuthUser } from "@/lib/auth";
+import { LABELS_API_ROUTES } from "@/features/labels/api/routes";
 import type { LabelHistoryItem, LabelHistoryListResponse } from "@/types/udi";
 
 export function useLabelHistory() {
@@ -24,7 +25,7 @@ export function useLabelHistory() {
       setLoadingHistory(true);
       try {
         const response = await api.get<LabelHistoryListResponse>(
-          "/api/v1/labels/history",
+          LABELS_API_ROUTES.history,
           {
             params: {
               user_id: authUser.user_id,
@@ -59,7 +60,7 @@ export function useLabelHistory() {
     }
 
     try {
-      await api.delete(`/api/v1/labels/history/${id}`, {
+      await api.delete(LABELS_API_ROUTES.historyById(id), {
         params: {
           user_id: authUser.user_id,
         },

@@ -17,13 +17,25 @@ type LabelFormProps = {
   isLoading?: boolean;
 };
 
+function formatDateToYYMMDD(date: Date) {
+  const yy = String(date.getFullYear()).slice(-2);
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yy}/${mm}/${dd}`;
+}
+
 export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
+  const today = new Date();
+  const defaultProductionDate = formatDateToYYMMDD(today);
+  const defaultExpiryDate = formatDateToYYMMDD(
+    new Date(today.getFullYear() + 5, today.getMonth(), today.getDate())
+  );
   const currentYear = new Date().getFullYear();
   const [di, setDi] = useState("09506000134352");
   const [lot, setLot] = useState("LOT202603");
-  const [expiryDate, setExpiryDate] = useState("28/02/29");
+  const [expiryDate, setExpiryDate] = useState(defaultExpiryDate);
   const [serial, setSerial] = useState("SN0001");
-  const [productionDate, setProductionDate] = useState("");
+  const [productionDate, setProductionDate] = useState(defaultProductionDate);
   const [remarks, setRemarks] = useState("");
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {

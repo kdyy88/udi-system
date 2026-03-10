@@ -1,8 +1,12 @@
 import type { LabelGenerateResponse, LabelPreviewResponse } from "@/types/udi";
 import type { TemplateKey } from "@/lib/preview-templates";
 import type { ReactNode } from "react";
-import bwipjs from "@bwip-js/browser";
 import { toDisplayDate } from "@/lib/dateUtils";
+import {
+  createNormalizedGs1Svg,
+  DUAL_BARCODE_HEIGHT,
+  DUAL_BARCODE_WIDTH,
+} from "@/features/labels/preview/barcode-svg";
 
 type PreviewPngData = LabelGenerateResponse | LabelPreviewResponse;
 type PreviewSvgData = {
@@ -24,18 +28,6 @@ type PreviewTemplateCanvasProps = {
   preview: PreviewData;
   expiryDisplay: string;
 };
-
-const DUAL_BARCODE_WIDTH = 320;
-const DUAL_BARCODE_HEIGHT = 48;
-const BWIP_GS1_128_OPTIONS = {
-  bcid: "gs1-128",
-  includetext: false,
-  height: 10,
-  scaleX: 2,
-  scaleY: 2,
-  paddingwidth: 0,
-  paddingheight: 0,
-} as const;
 
 function findAiText(hri: string, ai: string): string {
   return hri.match(new RegExp(`\\(${ai}\\)[^()]+`))?.[0] ?? "";
@@ -86,58 +78,6 @@ function getBarcodePayload(preview: PreviewData) {
   };
 }
 
-function toGs1SvgWithBwip(hriText: string): string | null {
-  try {
-    return bwipjs.toSVG({
-      ...BWIP_GS1_128_OPTIONS,
-      text: hriText,
-    });
-  } catch {
-    return null;
-  }
-}
-
-function normalizeLinearSvg(svg: string): string {
-  const pathMatch = svg.match(/<path[^>]*stroke-width="([0-9.]+)"[^>]*d="([^"]+)"[^>]*>/);
-  if (!pathMatch) return svg;
-
-  const strokeWidth = Number(pathMatch[1]) || 0;
-  const d = pathMatch[2];
-  const pointPattern = /([ML])\s*([0-9.]+)\s*([0-9.]+)/g;
-
-  const points: Array<{ cmd: string; x: number; y: number }> = [];
-  let match: RegExpExecArray | null;
-  while ((match = pointPattern.exec(d)) !== null) {
-    points.push({ cmd: match[1], x: Number(match[2]), y: Number(match[3]) });
-  }
-
-  if (points.length === 0) return svg;
-
-  const minX = Math.min(...points.map((p) => p.x));
-  const maxX = Math.max(...points.map((p) => p.x));
-  const pad = strokeWidth / 2;
-  const shiftX = minX - pad;
-  const newWidth = Math.max(1, maxX - minX + strokeWidth);
-
-  const normalizedD = d.replace(pointPattern, (_, cmd: string, x: string, y: string) => {
-    const newX = Number(x) - shiftX;
-    return `${cmd}${newX} ${y}`;
-  });
-
-  const viewBoxMatch = svg.match(/viewBox="0 0 ([0-9.]+) ([0-9.]+)"/);
-  if (!viewBoxMatch) {
-    return svg
-      .replace(d, normalizedD)
-      .replace("<svg ", '<svg preserveAspectRatio="none" ');
-  }
-
-  const height = Number(viewBoxMatch[2]);
-  return svg
-    .replace(pathMatch[2], normalizedD)
-    .replace(viewBoxMatch[0], `viewBox="0 0 ${newWidth} ${height}"`)
-    .replace("<svg ", '<svg preserveAspectRatio="none" ');
-}
-
 export function PreviewTemplateCanvas({
   template,
   preview,
@@ -171,15 +111,12 @@ export function PreviewTemplateCanvas({
     const piLine = piParts
       .filter(Boolean)
       .join(" ");
-    const dualBarcodeWidth = 320;
-    const dualBarcodeHeight = 48;
     const diBarcode = payload.gs1_128_di_only || payload.gs1_128;
     const piBarcode = payload.gs1_128_pi_only || payload.gs1_128;
-    const bwipDiSvg =
-      payload.format === "svg" && diText ? normalizeLinearSvg(toGs1SvgWithBwip(diText) ?? "") : null;
+    const bwipDiSvg = payload.format === "svg" && diText ? createNormalizedGs1Svg(diText) : null;
     const bwipPiSvg =
       payload.format === "svg" && piParts.length > 0
-        ? normalizeLinearSvg(toGs1SvgWithBwip(piParts.join("")) ?? "")
+        ? createNormalizedGs1Svg(piParts.join(""))
         : null;
     const finalDiBarcode = payload.format === "svg" && bwipDiSvg ? bwipDiSvg : diBarcode;
     const finalPiBarcode = payload.format === "svg" && bwipPiSvg ? bwipPiSvg : piBarcode;
