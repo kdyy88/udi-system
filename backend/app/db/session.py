@@ -1,7 +1,7 @@
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
@@ -10,51 +10,22 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(
+engine = create_async_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False}
-    if settings.DATABASE_URL.startswith("sqlite")
-    else {},
+    pool_size=10,
+    max_overflow=20,
+    pool_pre_ping=True,
+    pool_recycle=3600,
 )
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+)
 
 
-def prepare_sqlite_schema_for_poc() -> None:
-    """Reset outdated SQLite tables for local POC when model columns changed."""
-    if not settings.DATABASE_URL.startswith("sqlite"):
-        return
-
-    required_columns = {
-        "id",
-        "user_id",
-        "gtin",
-        "batch_no",
-        "expiry_date",
-        "serial_no",
-        "production_date",
-        "remarks",
-        "full_string",
-        "created_at",
-    }
-
-    with engine.begin() as conn:
-        existing = conn.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table' AND name='label_history'")
-        ).scalar_one_or_none()
-        if existing is None:
-            return
-
-        rows = conn.execute(text("PRAGMA table_info(label_history)")).mappings().all()
-        current_columns = {row["name"] for row in rows}
-
-        if not required_columns.issubset(current_columns):
-            conn.execute(text("DROP TABLE label_history"))
-
-
-def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        yield session

@@ -15,19 +15,40 @@ export type LoginResponse = {
   message: string;
 };
 
-export type LabelPreviewResponse = {
+/**
+ * Response from POST /api/v1/labels/generate (save-on-export)
+ * Barcode images are NOT stored; barcodes are rendered client-side via bwip-js.
+ */
+export type LabelSaveResponse = {
+  history_id: number;
+  created_at: string;
   di: string;
   hri: string;
   gs1_element_string: string;
   gs1_element_string_escaped: string;
-  datamatrix_base64: string;
-  gs1_128_base64: string;
 };
 
-export type LabelGenerateResponse = LabelPreviewResponse & {
-  history_id: number;
-  created_at: string;
+/**
+ * Local preview computed from form data — no backend call needed.
+ * Holds both the computed GS1 strings and the raw form fields required to
+ * save the record when the user exports.
+ */
+export type LocalPreviewData = {
+  di: string;
+  hri: string;
+  gs1_element_string: string;
+  gs1_element_string_escaped: string;
+  lot: string | null;
+  expiry: string | null;
+  serial: string | null;
+  productionDate: string | null;
+  remarks: string | null;
 };
+
+/** Discriminated-union to distinguish a brand-new (unsaved) preview from a history review. */
+export type PreviewSource =
+  | { kind: "local"; data: LocalPreviewData }
+  | { kind: "history"; data: LabelHistoryItem };
 
 export type LabelHistoryItem = {
   id: number;
@@ -39,12 +60,13 @@ export type LabelHistoryItem = {
   production_date: string | null;
   remarks: string | null;
   full_string: string;
+  hri: string;
   created_at: string;
 };
 
 export type LabelHistoryListResponse = {
   total: number;
-  page: number;
-  page_size: number;
+  next_cursor: number | null;
   items: LabelHistoryItem[];
 };
+

@@ -1,26 +1,46 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gs1-udi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gs1udi}
+      POSTGRES_USER: ${POSTGRES_USER:-gs1user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gs1pass}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gs1user} -d ${POSTGRES_DB:-gs1udi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
     container_name: gs1-udi-backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: sqlite:///./data/udi.db
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-gs1user}:${POSTGRES_PASSWORD:-gs1pass}@postgres:5432/${POSTGRES_DB:-gs1udi}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      WORKERS: ${WORKERS:-4}
     ports:
       - "${BACKEND_PORT:-18000}:8000"
-    volumes:
-      - ./backend/data:/app/data
-      - ./backend/outputs:/app/outputs
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://127.0.0.1:18000}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
     container_name: gs1-udi-frontend
     restart: unless-stopped
     depends_on:
       - backend
     ports:
       - "${FRONTEND_PORT:-3001}:3000"
+
+volumes:
+  postgres_prod_data:

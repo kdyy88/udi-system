@@ -7,13 +7,12 @@ import type { LabelHistoryItem } from "@/types/udi";
 type LabelHistorySectionProps = {
   rows: LabelHistoryItem[];
   loading: boolean;
-  loadingReviewId: number | null;
-  page: number;
-  pageSize: number;
   total: number;
+  hasPrev: boolean;
+  hasNext: boolean;
   onSearch: (gtin: string, batchNo: string) => void;
   onReview: (row: LabelHistoryItem) => void;
-  onDelete: (id: number, onSuccess: () => void) => void;
+  onDelete: (id: number) => void;
   onPrev: () => void;
   onNext: () => void;
 };
@@ -21,10 +20,9 @@ type LabelHistorySectionProps = {
 export function LabelHistorySection({
   rows,
   loading,
-  loadingReviewId,
-  page,
-  pageSize,
   total,
+  hasPrev,
+  hasNext,
   onSearch,
   onReview,
   onDelete,
@@ -39,12 +37,11 @@ export function LabelHistorySection({
         <DataTable
           rows={rows}
           onReview={onReview}
-          onDelete={(id) => onDelete(id, () => onSearch("", ""))}
-          loadingRowId={loadingReviewId}
+          onDelete={onDelete}
           pagination={{
-            page,
-            pageSize,
             total,
+            hasPrev,
+            hasNext,
             onPrev,
             onNext,
           }}

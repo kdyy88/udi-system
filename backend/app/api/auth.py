@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import User
 from app.db.session import get_db
@@ -16,10 +16,11 @@ async def auth_ping() -> dict[str, str]:
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
-    user = db.execute(
+async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> LoginResponse:
+    result = await db.execute(
         select(User).where(User.username == payload.username)
-    ).scalar_one_or_none()
+    )
+    user = result.scalar_one_or_none()
 
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(

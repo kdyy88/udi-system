@@ -1,3 +1,61 @@
+# ========================
+# 环境变量 / 密钥
+# ========================
 .env
-.env.prod
-.env.local
+.env.*
+!.env.*.example
+
+# ========================
+# Python / 后端
+# ========================
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.python-version
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# ========================
+# Node / 前端
+# ========================
+node_modules/
+.next/
+.pnpm-store/
+frontend/.pnpm-debug.log*
+out/
+
+# ========================
+# 数据库 / 本地数据
+# ========================
+*.sqlite
+*.sqlite3
+*.db
+backend/data/
+
+# ========================
+# 日志 / 临时文件
+# ========================
+*.log
+*.tmp
+outputs/
+
+# ========================
+# 操作系统
+# ========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ========================
+# VS Code（保留 tasks.json）
+# ========================
+.vscode/*
+!.vscode/tasks.json
