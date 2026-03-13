@@ -10,19 +10,15 @@ type DataTableProps = {
   onDelete: (id: number) => void;
   loadingRowId?: number | null;
   pagination?: {
-    page: number;
-    pageSize: number;
     total: number;
+    hasPrev: boolean;
+    hasNext: boolean;
     onPrev: () => void;
     onNext: () => void;
   };
 };
 
 export function DataTable({ rows, onReview, onDelete, loadingRowId, pagination }: DataTableProps) {
-  const totalPages = pagination
-    ? Math.max(1, Math.ceil(pagination.total / pagination.pageSize))
-    : 1;
-
   return (
     <div className="rounded-xl border">
       <div className="overflow-x-auto">
@@ -82,13 +78,13 @@ export function DataTable({ rows, onReview, onDelete, loadingRowId, pagination }
       {pagination ? (
         <div className="flex flex-col gap-2 border-t bg-muted/20 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
           <span className="text-muted-foreground text-xs sm:text-sm">
-            共 {pagination.total} 条，当前第 {pagination.page}/{totalPages} 页
+            共 {pagination.total} 条
           </span>
           <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="outline"
-              disabled={pagination.page <= 1}
+              disabled={!pagination.hasPrev}
               onClick={pagination.onPrev}
               className="text-xs"
             >
@@ -97,7 +93,7 @@ export function DataTable({ rows, onReview, onDelete, loadingRowId, pagination }
             <Button
               size="sm"
               variant="outline"
-              disabled={pagination.page >= totalPages}
+              disabled={!pagination.hasNext}
               onClick={pagination.onNext}
               className="text-xs"
             >

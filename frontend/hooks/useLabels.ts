@@ -1,13 +1,16 @@
+"use client";
+
 import { useState } from "react";
 import { toast } from "sonner";
-import { api } from "@/lib/api";
+
 import { toTransferDate } from "@/lib/dateUtils";
-import { LABELS_API_ROUTES } from "@/features/labels/api/routes";
-import type {
-  LabelGenerateResponse,
-  LabelPreviewResponse,
-  AuthUser,
-} from "@/types/udi";
+import {
+  buildHri,
+  buildGs1ElementString,
+  escapeGs1ElementString,
+  validateGtin14,
+} from "@/lib/gs1";
+import type { PreviewSource } from "@/types/udi";
 
 type LabelFormData = {
   di: string;
@@ -19,56 +22,59 @@ type LabelFormData = {
 };
 
 export function useLabels() {
-  const [preview, setPreview] = useState<LabelGenerateResponse | LabelPreviewResponse | null>(
-    null
-  );
-  const [loadingGenerate, setLoadingGenerate] = useState(false);
+  const [previewSource, setPreviewSource] = useState<PreviewSource | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const handleGenerate = async (formData: LabelFormData, authUser: AuthUser | null) => {
-    if (!authUser) {
-      toast.error("请先登录");
+  /**
+   * Build a local preview from form data — no network call.
+   * Opens the preview dialog immediately (instant, no spinner needed).
+   */
+  const handlePreviewLocally = (formData: LabelFormData): boolean => {
+    if (formData.di.length !== 14 || !validateGtin14(formData.di)) {
+      toast.error("DI 必须是有效的 14 位 GTIN（含正确校验位）");
       return false;
     }
 
-    if (formData.di.length !== 14) {
-      toast.error("DI 必须是 14 位 GTIN");
-      return false;
-    }
+    const params = {
+      di: formData.di,
+      lot: formData.lot || null,
+      expiry: toTransferDate(formData.expiryDate) ?? null,
+      serial: formData.serial || null,
+      productionDate: toTransferDate(formData.productionDate) ?? null,
+    };
 
-    setLoadingGenerate(true);
     try {
-      const generateRes = await api.post<LabelGenerateResponse>(
-        LABELS_API_ROUTES.generate,
-        {
-          user_id: authUser.user_id,
-          di: formData.di,
-          lot: formData.lot || null,
-          expiry: toTransferDate(formData.expiryDate) ?? null,
-          serial: formData.serial || null,
-          production_date: toTransferDate(formData.productionDate) ?? null,
-          remarks: formData.remarks || null,
-        }
-      );
+      const hri = buildHri(params);
+      const gs1 = buildGs1ElementString(params);
 
-      setPreview(generateRes.data);
+      setPreviewSource({
+        kind: "local",
+        data: {
+          di: formData.di,
+          hri,
+          gs1_element_string: gs1,
+          gs1_element_string_escaped: escapeGs1ElementString(gs1),
+          lot: params.lot,
+          expiry: params.expiry,
+          serial: params.serial,
+          productionDate: params.productionDate,
+          remarks: formData.remarks || null,
+        },
+      });
       setDialogOpen(true);
-      toast.success("生成成功，已入库");
       return true;
-    } catch {
-      toast.error("生成失败，请检查 DI/PI 参数");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "GS1 字符串构建失败");
       return false;
-    } finally {
-      setLoadingGenerate(false);
     }
   };
 
   return {
-    preview,
-    setPreview,
-    loadingGenerate,
+    previewSource,
+    setPreviewSource,
     dialogOpen,
     setDialogOpen,
-    handleGenerate,
+    handlePreviewLocally,
   };
 }
+

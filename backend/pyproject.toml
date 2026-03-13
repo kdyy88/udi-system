@@ -1,16 +1,25 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "GS1 UDI generation service"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.135.1",
+    "uvicorn>=0.41.0",
+    "gunicorn>=22.0.0",
+    "treepoem>=3.28.0",
+    "sqlalchemy[asyncio]>=2.0.48",
+    "asyncpg>=0.30.0",
+    "alembic>=1.13.0",
+    "anyio>=4.0.0",
     "openpyxl>=3.1.5",
     "pandas>=3.0.1",
     "pillow>=10.0.0",
     "python-multipart>=0.0.22",
-    "sqlalchemy>=2.0.48",
-    "treepoem>=3.28.0",
-    "uvicorn>=0.41.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
 ]

@@ -1,4 +1,3 @@
-import type { LabelGenerateResponse, LabelPreviewResponse } from "@/types/udi";
 import type { TemplateKey } from "@/lib/preview-templates";
 import type { ReactNode } from "react";
 import { toDisplayDate } from "@/lib/dateUtils";
@@ -8,7 +7,14 @@ import {
   DUAL_BARCODE_WIDTH,
 } from "@/features/labels/preview/barcode-svg";
 
-type PreviewPngData = LabelGenerateResponse | LabelPreviewResponse;
+/** Shape of data when using backend-rendered PNG barcodes (legacy / fallback path). */
+type PreviewPngData = {
+  hri: string;
+  datamatrix_base64: string;
+  gs1_128_base64: string;
+  gs1_128_di_only_base64?: string | null;
+  gs1_128_pi_only_base64?: string | null;
+};
 type PreviewSvgData = {
   hri: string;
   datamatrix_svg: string;
@@ -45,8 +51,10 @@ function renderBarcode(content: string, format: BarcodeFormat, className: string
       : `data:image/png;base64,${content}`;
 
   if (className) {
+    // eslint-disable-next-line @next/next/no-img-element
     return <img src={src} alt="Barcode" className={className} />;
   }
+  // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt="Barcode" />;
 }
 
@@ -126,6 +134,7 @@ export function PreviewTemplateCanvas({
     return (
       <div className="flex flex-col gap-1 bg-white p-1 text-black">
         <div className="flex items-start justify-center gap-1 overflow-x-auto">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={diBarcodeSrc}
             alt="DI Barcode"
@@ -135,6 +144,7 @@ export function PreviewTemplateCanvas({
         </div>
         <p className="text-center text-xs font-semibold overflow-x-auto pb-1">(01) {diValue}</p>
         <div className="flex items-start justify-center overflow-x-auto">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={piBarcodeSrc}
             alt="PI Barcode"

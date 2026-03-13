@@ -1,107 +1,66 @@
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
+/**
+ * useBwipPreview — replaces the old server-round-trip orchestrator.
+ *
+ * All barcode SVGs are now generated synchronously in the browser via bwip-js.
+ * No network requests are made here; the backend is only called when the user
+ * explicitly exports a label (see save.ts).
+ */
+import { useMemo } from "react";
 
-import { api } from "@/lib/api";
-import type {
-  LabelGenerateResponse,
-  LabelPreviewResponse,
-  LabelPreviewSvgResponse,
-} from "@/types/udi";
-import { LABELS_API_ROUTES } from "@/features/labels/api/routes";
-import { buildPreviewPayload } from "@/features/labels/preview/payload";
+import { createDataMatrixSvg, createNormalizedGs1Svg } from "./barcode-svg";
 
-export type PreviewBarcodeFormat = "png" | "svg";
-
-type UseLabelPreviewOrchestratorParams = {
-  preview: LabelGenerateResponse | LabelPreviewResponse | null;
-  expiryDate: string;
-  barcodeFormat: PreviewBarcodeFormat;
-  onSvgPreviewError: () => void;
+export type BwipPreviewData = {
+  datamatrixSvg: string | null;
+  gs1128Svg: string | null;
+  gs1128DiOnlySvg: string | null;
+  gs1128PiOnlySvg: string | null;
+  error: string | null;
 };
 
-export function useLabelPreviewOrchestrator({
-  preview,
-  expiryDate,
-  barcodeFormat,
-  onSvgPreviewError,
-}: UseLabelPreviewOrchestratorParams) {
-  const [svgPreview, setSvgPreview] = useState<LabelPreviewSvgResponse | null>(null);
-  const [pngEnhancedPreview, setPngEnhancedPreview] = useState<LabelPreviewResponse | null>(null);
-  const [loadingSvg, setLoadingSvg] = useState(false);
-
-  useEffect(() => {
-    if (!preview) {
-      return;
-    }
-
-    const needsEnhancedPng =
-      !preview.datamatrix_base64 ||
-      !preview.gs1_128_base64 ||
-      !preview.gs1_128_di_only_base64 ||
-      !preview.gs1_128_pi_only_base64;
-
-    if (!needsEnhancedPng || pngEnhancedPreview?.hri === preview.hri) {
-      return;
-    }
-
-    const fetchEnhancedPngPreview = async () => {
-      try {
-        const payload = buildPreviewPayload(preview.di, preview.hri, expiryDate);
-        const res = await api.post<LabelPreviewResponse>(LABELS_API_ROUTES.preview, payload);
-        setPngEnhancedPreview(res.data);
-      } catch {
-        // keep fallback behavior with original preview data
-      }
-    };
-
-    void fetchEnhancedPngPreview();
-  }, [preview, pngEnhancedPreview, expiryDate]);
-
-  useEffect(() => {
-    if (barcodeFormat !== "svg" || !preview) {
-      return;
-    }
-
-    if (svgPreview?.hri === preview.hri) {
-      return;
-    }
-
-    const fetchSvgPreview = async () => {
-      setLoadingSvg(true);
-      const payload = buildPreviewPayload(preview.di, preview.hri, expiryDate);
-
-      try {
-        const res = await api.post<LabelPreviewSvgResponse>(LABELS_API_ROUTES.previewSvg, payload);
-        setSvgPreview(res.data);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "unknown error";
-        console.error("SVG preview error:", message);
-        toast.error("加载SVG预览失败");
-        onSvgPreviewError();
-      } finally {
-        setLoadingSvg(false);
-      }
-    };
-
-    void fetchSvgPreview();
-  }, [barcodeFormat, preview, svgPreview, expiryDate, onSvgPreviewError]);
-
-  const previewForPng =
-    preview && pngEnhancedPreview?.hri === preview.hri
-      ? {
-          ...preview,
-          datamatrix_base64: pngEnhancedPreview.datamatrix_base64,
-          gs1_128_base64: pngEnhancedPreview.gs1_128_base64,
-          gs1_128_di_only_base64:
-            pngEnhancedPreview.gs1_128_di_only_base64 ?? preview.gs1_128_di_only_base64,
-          gs1_128_pi_only_base64:
-            pngEnhancedPreview.gs1_128_pi_only_base64 ?? preview.gs1_128_pi_only_base64,
-        }
-      : preview;
-
-  return {
-    svgPreview,
-    loadingSvg,
-    previewForPng,
-  };
+function findAiText(hri: string, ai: string): string {
+  return hri.match(new RegExp(`\\(${ai}\\)[^()]+`))?.[0] ?? "";
 }
+
+/**
+ * Compute all four barcode SVGs from an HRI string.
+ * Results are memoised: re-computation only happens when `hri` changes.
+ */
+export function useBwipPreview(hri: string | null | undefined): BwipPreviewData {
+  return useMemo<BwipPreviewData>(() => {
+    if (!hri) {
+      return {
+        datamatrixSvg: null,
+        gs1128Svg: null,
+        gs1128DiOnlySvg: null,
+        gs1128PiOnlySvg: null,
+        error: null,
+      };
+    }
+
+    try {
+      const diText = findAiText(hri, "01");
+      const piParts = ["11", "17", "10", "21"]
+        .map((ai) => findAiText(hri, ai))
+        .filter(Boolean);
+      const piText = piParts.join("");
+
+      return {
+        datamatrixSvg: createDataMatrixSvg(hri),
+        gs1128Svg: createNormalizedGs1Svg(hri),
+        gs1128DiOnlySvg: diText ? createNormalizedGs1Svg(diText) : null,
+        gs1128PiOnlySvg: piText ? createNormalizedGs1Svg(piText) : null,
+        error: null,
+      };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "条码渲染失败";
+      return {
+        datamatrixSvg: null,
+        gs1128Svg: null,
+        gs1128DiOnlySvg: null,
+        gs1128PiOnlySvg: null,
+        error: message,
+      };
+    }
+  }, [hri]);
+}
+

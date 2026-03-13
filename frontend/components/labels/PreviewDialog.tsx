@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef } from "react";
-import { Download, LayoutTemplate, Zap } from "lucide-react";
+import { useRef, useMemo, useState } from "react";
+import { Download, LayoutTemplate } from "lucide-react";
 import { toast } from "sonner";
+
 import { PreviewTemplateCanvas } from "./PreviewTemplateCanvas";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,61 +19,84 @@ import {
   type TemplateKey,
 } from "@/lib/preview-templates";
 import { toDisplayDate } from "@/lib/dateUtils";
-import type { LabelGenerateResponse, LabelPreviewResponse } from "@/types/udi";
-import { useMemo, useState } from "react";
-import {
-  type PreviewBarcodeFormat,
-  useLabelPreviewOrchestrator,
-} from "@/features/labels/preview/useLabelPreviewOrchestrator";
+import { useBwipPreview } from "@/features/labels/preview/useLabelPreviewOrchestrator";
 import { exportPreviewNode, type PreviewExportFormat } from "@/features/labels/preview/export";
+import { saveLabelToBackend } from "@/features/labels/preview/save";
+import { getAuthUser } from "@/lib/auth";
+import type { PreviewSource } from "@/types/udi";
 
 type PreviewDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  preview: LabelGenerateResponse | LabelPreviewResponse | null;
+  previewSource: PreviewSource | null;
   expiryDate: string;
+  onSaved?: () => void;
 };
 
 export function PreviewDialog({
   open,
   onOpenChange,
-  preview,
+  previewSource,
   expiryDate,
+  onSaved,
 }: PreviewDialogProps) {
   const previewRef = useRef<HTMLDivElement>(null);
   const [template, setTemplate] = useState<TemplateKey>(DEFAULT_TEMPLATE_KEY);
-  const [barcodeFormat, setBarcodeFormat] = useState<PreviewBarcodeFormat>("png");
-  const { svgPreview, loadingSvg, previewForPng } = useLabelPreviewOrchestrator({
-    preview,
-    expiryDate,
-    barcodeFormat,
-    onSvgPreviewError: () => setBarcodeFormat("png"),
-  });
+  const [saving, setSaving] = useState(false);
+
+  // Extract canonical fields regardless of source kind
+  const previewMeta = useMemo(() => {
+    if (!previewSource) return null;
+    if (previewSource.kind === "local") {
+      return {
+        hri: previewSource.data.hri,
+        di: previewSource.data.di,
+        gs1Escaped: previewSource.data.gs1_element_string_escaped,
+        expiryDate: expiryDate,
+      };
+    }
+    return {
+      hri: previewSource.data.hri,
+      di: previewSource.data.gtin,
+      gs1Escaped: previewSource.data.full_string.replace(/\x1d/g, "\\x1d"),
+      expiryDate: previewSource.data.expiry_date ?? expiryDate,
+    };
+  }, [previewSource, expiryDate]);
+
+  // All barcodes rendered synchronously in-browser — zero network requests
+  const { datamatrixSvg, gs1128Svg, gs1128DiOnlySvg, gs1128PiOnlySvg, error: barcodeError } = useBwipPreview(
+    previewMeta?.hri
+  );
 
   const selectedTemplate = useMemo(
     () => PREVIEW_TEMPLATES.find((item) => item.key === template),
     [template]
   );
 
-  const loadingPng =
-    barcodeFormat === "png" &&
-    !!preview &&
-    (!previewForPng?.datamatrix_base64 || !previewForPng?.gs1_128_base64);
-
-  const previewMeta = useMemo(() => {
-    if (!preview) {
-      return null;
-    }
-    return [
-      { label: "HRI", value: preview.hri },
-      { label: "GS1 Element String", value: preview.gs1_element_string_escaped },
-    ];
-  }, [preview]);
-
   const handleDownload = async (format: PreviewExportFormat) => {
-    if (!previewRef.current) {
+    if (!previewRef.current || !previewSource || !previewMeta) {
       toast.error("暂无可下载的预览内容");
       return;
+    }
+
+    // Brand-new label: save to backend before downloading
+    if (previewSource.kind === "local") {
+      const authUser = getAuthUser();
+      if (!authUser) {
+        toast.error("请先登录");
+        return;
+      }
+      setSaving(true);
+      try {
+        await saveLabelToBackend(previewSource.data, authUser.user_id);
+        toast.success("已保存至历史记录");
+        onSaved?.();
+      } catch {
+        toast.error("保存失败，请检查网络后重试");
+        setSaving(false);
+        return;
+      }
+      setSaving(false);
     }
 
     try {
@@ -82,16 +106,36 @@ export function PreviewDialog({
     }
   };
 
+  // Build canvas preview data (always SVG via bwip-js)
+  const canvasPreview = useMemo(() => {
+    if (!previewMeta || !gs1128Svg || !datamatrixSvg) return null;
+    return {
+      format: "svg" as const,
+      data: {
+        hri: previewMeta.hri,
+        datamatrix_svg: datamatrixSvg,
+        gs1_128_svg: gs1128Svg,
+        gs1_128_di_only_svg: gs1128DiOnlySvg,
+        gs1_128_pi_only_svg: gs1128PiOnlySvg,
+      },
+    };
+  }, [previewMeta, datamatrixSvg, gs1128Svg, gs1128DiOnlySvg, gs1128PiOnlySvg]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>条码实时预览</DialogTitle>
-          <DialogDescription>支持模板切换与下载：PDF / SVG / 透明背景 PNG</DialogDescription>
+          <DialogDescription>
+            {previewSource?.kind === "local"
+              ? "点击下载按钮将同时保存至历史记录"
+              : "历史记录预览 · 支持模板切换与下载"}
+          </DialogDescription>
         </DialogHeader>
 
-        {preview ? (
+        {previewSource && previewMeta ? (
           <div className="mt-4 space-y-4">
+            {/* Template switcher */}
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
@@ -110,53 +154,22 @@ export function PreviewDialog({
                   </Button>
                 ))}
               </div>
+
+              {/* Download buttons */}
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                  <Zap className="size-4" />
-                  条码
-                </span>
-                <Button
-                  size="sm"
-                  variant={barcodeFormat === "png" ? "default" : "outline"}
-                  onClick={() => setBarcodeFormat("png")}
-                  className="text-xs"
-                >
-                  PNG
-                </Button>
-                <Button
-                  size="sm"
-                  variant={barcodeFormat === "svg" ? "default" : "outline"}
-                  onClick={() => setBarcodeFormat("svg")}
-                  className="text-xs"
-                >
-                  SVG
-                </Button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void handleDownload("png")}
-                  className="text-xs"
-                >
-                  <Download className="size-4" /> PNG
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void handleDownload("svg")}
-                  className="text-xs"
-                >
-                  <Download className="size-4" /> SVG
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void handleDownload("pdf")}
-                  className="text-xs"
-                >
-                  <Download className="size-4" /> PDF
-                </Button>
+                {(["png", "svg", "pdf"] as PreviewExportFormat[]).map((fmt) => (
+                  <Button
+                    key={fmt}
+                    size="sm"
+                    variant="outline"
+                    disabled={saving || !!barcodeError}
+                    onClick={() => void handleDownload(fmt)}
+                    className="text-xs"
+                  >
+                    <Download className="size-4" />
+                    {saving ? "保存中..." : fmt.toUpperCase()}
+                  </Button>
+                ))}
               </div>
             </div>
 
@@ -164,51 +177,44 @@ export function PreviewDialog({
               <p className="text-xs text-muted-foreground">{selectedTemplate.description}</p>
             ) : null}
 
-            <div ref={previewRef} className="rounded-md border border-dashed p-2 sm:p-3 -mx-2 sm:mx-0 overflow-x-auto">
+            {/* Barcode canvas */}
+            <div
+              ref={previewRef}
+              className="rounded-md border border-dashed p-2 sm:p-3 -mx-2 sm:mx-0 overflow-x-auto"
+            >
               <div className="inline-block min-w-full">
-                {loadingSvg && barcodeFormat === "svg" ? (
-                  <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-                    加载SVG中...
+                {barcodeError ? (
+                  <div className="flex items-center justify-center py-8 text-sm text-destructive">
+                    条码渲染失败：{barcodeError}
                   </div>
-                ) : loadingPng ? (
-                  <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-                    加载PNG中...
-                  </div>
-                ) : (
+                ) : canvasPreview ? (
                   <PreviewTemplateCanvas
                     template={template}
-                    preview={
-                      barcodeFormat === "svg" && svgPreview
-                        ? {
-                            format: "svg",
-                            data: {
-                              hri: svgPreview.hri,
-                              datamatrix_svg: svgPreview.datamatrix_svg,
-                              gs1_128_svg: svgPreview.gs1_128_svg,
-                              gs1_128_di_only_svg: svgPreview.gs1_128_di_only_svg,
-                              gs1_128_pi_only_svg: svgPreview.gs1_128_pi_only_svg,
-                            },
-                          }
-                        : {
-                            format: "png",
-                            data: previewForPng ?? preview,
-                          }
-                    }
-                    expiryDisplay={toDisplayDate(expiryDate)}
+                    preview={canvasPreview}
+                    expiryDisplay={toDisplayDate(previewMeta.expiryDate)}
                   />
+                ) : (
+                  <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                    条码生成中...
+                  </div>
                 )}
               </div>
             </div>
 
-            {previewMeta?.map((item) => (
-              <div key={item.label} className="rounded-md bg-muted/50 p-2 text-sm">
-                <p className="font-medium">{item.label}</p>
-                <p className="break-all text-muted-foreground">{item.value}</p>
-              </div>
-            ))}
+            {/* Metadata rows */}
+            <div className="rounded-md bg-muted/50 p-2 text-sm">
+              <p className="font-medium">HRI</p>
+              <p className="break-all text-muted-foreground">{previewMeta.hri}</p>
+            </div>
+            <div className="rounded-md bg-muted/50 p-2 text-sm">
+              <p className="font-medium">GS1 Element String</p>
+              <p className="break-all text-muted-foreground">{previewMeta.gs1Escaped}</p>
+            </div>
           </div>
         ) : null}
       </DialogContent>
     </Dialog>
   );
 }
+
+

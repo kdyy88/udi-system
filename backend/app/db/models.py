@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -20,6 +20,10 @@ class User(Base):
 
 class LabelHistory(Base):
     __tablename__ = "label_history"
+    __table_args__ = (
+        Index("ix_lh_user_created", "user_id", "created_at"),
+        Index("ix_lh_user_id_desc", "user_id", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
@@ -31,8 +35,7 @@ class LabelHistory(Base):
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     full_string: Mapped[str] = mapped_column(Text)
     hri: Mapped[str] = mapped_column(Text)
-    datamatrix_base64: Mapped[str] = mapped_column(Text)
-    gs1_128_base64: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )
+

@@ -2,42 +2,36 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search } from "lucide-react";
-import { toast } from "sonner";
 
 import { DataTable } from "@/components/shared/DataTable";
+import { PreviewDialog } from "@/components/labels/PreviewDialog";
 import { clearAuthUser, getAuthUser, type AuthUser } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
-import { LABELS_API_ROUTES } from "@/features/labels/api/routes";
-import type {
-  LabelHistoryDetail,
-  LabelHistoryItem,
-  LabelHistoryListResponse,
-  LabelPreviewResponse,
-} from "@/types/udi";
+import { Search } from "lucide-react";
+import { useLabelHistory } from "@/hooks/useLabelHistory";
+import type { LabelHistoryItem, PreviewSource } from "@/types/udi";
 
 export default function HistoryPage() {
   const router = useRouter();
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [rows, setRows] = useState<LabelHistoryItem[]>([]);
-  const [gtin, setGtin] = useState("");
-  const [batchNo, setBatchNo] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const pageSize = 10;
-  const [total, setTotal] = useState(0);
-  const [open, setOpen] = useState(false);
-  const [preview, setPreview] = useState<LabelPreviewResponse | null>(null);
+  const [localGtin, setLocalGtin] = useState("");
+  const [localBatchNo, setLocalBatchNo] = useState("");
+  const [previewSource, setPreviewSource] = useState<PreviewSource | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const {
+    historyRows,
+    loadingHistory,
+    total,
+    hasPrev,
+    hasNext,
+    handleSearch,
+    handleDelete,
+    goToPrevPage,
+    goToNextPage,
+  } = useLabelHistory();
 
   useEffect(() => {
     const user = getAuthUser();
@@ -47,58 +41,14 @@ export default function HistoryPage() {
     }
     setAuthUser(user);
     setCheckingAuth(false);
-  }, [router]);
+    // router is a stable Next.js ref; state setters are also stable — safe to omit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const loadHistory = async (targetPage = 1) => {
-    setLoading(true);
-    try {
-      const response = await api.get<LabelHistoryListResponse>(LABELS_API_ROUTES.history, {
-        params: {
-          user_id: authUser?.user_id,
-          gtin: gtin || undefined,
-          batch_no: batchNo || undefined,
-          page: targetPage,
-          page_size: pageSize,
-        },
-      });
-      setRows(response.data.items);
-      setTotal(response.data.total);
-      setPage(response.data.page);
-    } catch {
-      toast.error("历史记录获取失败");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!checkingAuth && authUser) {
-      void loadHistory(1);
-    }
-  }, [authUser, checkingAuth]);
-
-  const handleReview = async (row: LabelHistoryItem) => {
-    try {
-      const detail = await api.get<LabelHistoryDetail>(
-        LABELS_API_ROUTES.historyDetail(row.id),
-        {
-          params: {
-            user_id: authUser?.user_id,
-          },
-        }
-      );
-      setPreview({
-        di: row.gtin,
-        hri: row.hri,
-        gs1_element_string: row.full_string,
-        gs1_element_string_escaped: row.full_string,
-        datamatrix_base64: detail.data.datamatrix_base64,
-        gs1_128_base64: detail.data.gs1_128_base64,
-      });
-      setOpen(true);
-    } catch {
-      toast.error("打开历史预览失败");
-    }
+  const handleReview = (row: LabelHistoryItem) => {
+    // Instant — bwip-js renders barcodes from hri inside PreviewDialog
+    setPreviewSource({ kind: "history", data: row });
+    setDialogOpen(true);
   };
 
   if (checkingAuth || !authUser) {
@@ -126,46 +76,43 @@ export default function HistoryPage() {
       <div className="flex flex-wrap items-end gap-3 rounded-xl border p-4">
         <div className="min-w-60 flex-1 space-y-2">
           <label className="text-sm font-medium">按 GTIN 筛选</label>
-          <Input value={gtin} maxLength={14} onChange={(e) => setGtin(e.target.value.trim())} />
+          <Input
+            value={localGtin}
+            maxLength={14}
+            onChange={(e) => setLocalGtin(e.target.value.trim())}
+          />
         </div>
         <div className="min-w-60 flex-1 space-y-2">
           <label className="text-sm font-medium">按批次号筛选</label>
-          <Input value={batchNo} onChange={(e) => setBatchNo(e.target.value.trim())} />
+          <Input value={localBatchNo} onChange={(e) => setLocalBatchNo(e.target.value.trim())} />
         </div>
-        <Button onClick={() => void loadHistory(1)} disabled={loading}>
+        <Button onClick={() => handleSearch(localGtin, localBatchNo)} disabled={loadingHistory}>
           <Search />
-          {loading ? "查询中..." : "查询"}
+          {loadingHistory ? "查询中..." : "查询"}
         </Button>
       </div>
 
       <DataTable
-        rows={rows}
+        rows={historyRows}
         onReview={handleReview}
-        onDelete={() => {}}
+        onDelete={handleDelete}
         pagination={{
-          page,
-          pageSize,
           total,
-          onPrev: () => void loadHistory(page - 1),
-          onNext: () => void loadHistory(page + 1),
+          hasPrev,
+          hasNext,
+          onPrev: goToPrevPage,
+          onNext: goToNextPage,
         }}
       />
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>条码预览</DialogTitle>
-            <DialogDescription>历史记录重新查看</DialogDescription>
-          </DialogHeader>
-          {preview ? (
-            <img
-              src={`data:image/png;base64,${preview.datamatrix_base64}`}
-              alt="History Barcode"
-              className="mx-auto mt-4 rounded-md border p-2"
-            />
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <PreviewDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        previewSource={previewSource}
+        expiryDate=""
+      />
     </main>
   );
 }
+
+

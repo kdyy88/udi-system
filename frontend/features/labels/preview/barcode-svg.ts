@@ -13,6 +13,12 @@ const BWIP_GS1_128_OPTIONS = {
   paddingheight: 0,
 } as const;
 
+const BWIP_GS1_DATAMATRIX_OPTIONS = {
+  bcid: "gs1datamatrix",
+  scale: 3,
+  includetext: false,
+} as const;
+
 function toGs1SvgWithBwip(hriText: string): string | null {
   try {
     return bwipjs.toSVG({
@@ -65,8 +71,25 @@ function normalizeLinearSvg(svg: string): string {
     .replace("<svg ", '<svg preserveAspectRatio="none" ');
 }
 
+/** Render a GS1-128 barcode as a compact, normalised SVG string (bwip-js). */
 export function createNormalizedGs1Svg(hriText: string): string | null {
   const raw = toGs1SvgWithBwip(hriText);
   if (!raw) return null;
   return normalizeLinearSvg(raw);
 }
+
+/**
+ * Render a GS1 DataMatrix barcode as an SVG string (bwip-js).
+ * @param hriText - Full HRI string e.g. "(01)09506…(17)290228(10)LOT001"
+ */
+export function createDataMatrixSvg(hriText: string): string | null {
+  try {
+    return bwipjs.toSVG({
+      ...BWIP_GS1_DATAMATRIX_OPTIONS,
+      text: hriText,
+    });
+  } catch {
+    return null;
+  }
+}
+

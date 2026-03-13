@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
+import { validateGtin14 } from "@/lib/gs1";
 
 type LabelFormProps = {
   onSubmit: (data: {
@@ -13,7 +14,7 @@ type LabelFormProps = {
     serial: string;
     productionDate: string;
     remarks: string;
-  }) => Promise<boolean>;
+  }) => boolean | Promise<boolean>;
   isLoading?: boolean;
 };
 
@@ -32,6 +33,7 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
   );
   const currentYear = new Date().getFullYear();
   const [di, setDi] = useState("09506000134352");
+  const [diError, setDiError] = useState("");
   const [lot, setLot] = useState("LOT202603");
   const [expiryDate, setExpiryDate] = useState(defaultExpiryDate);
   const [serial, setSerial] = useState("SN0001");
@@ -40,6 +42,11 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!validateGtin14(di)) {
+      setDiError("GTIN-14 校验位错误，请检查输入");
+      return;
+    }
+    setDiError("");
     const success = await onSubmit({
       di,
       lot,
@@ -67,13 +74,18 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
           <label className="text-sm font-medium">DI / GTIN-14</label>
           <Input
             value={di}
-            onChange={(e) => setDi(e.target.value.trim())}
-            minLength={14}
+            onChange={(e) => { setDi(e.target.value.trim()); setDiError(""); }}
             maxLength={14}
             placeholder="09506000134352"
             required
+            aria-invalid={!!diError}
+            className={diError ? "border-destructive" : ""}
           />
-          <p className="text-xs text-muted-foreground">固定 14 位数字</p>
+          {diError ? (
+            <p className="text-xs text-destructive">{diError}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">固定 14 位数字</p>
+          )}
         </div>
 
         <div className="space-y-2">

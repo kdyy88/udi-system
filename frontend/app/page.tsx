@@ -11,32 +11,28 @@ import { getAuthUser, type AuthUser } from "@/lib/auth";
 import { useLabels } from "@/hooks/useLabels";
 import { useLabelHistory } from "@/hooks/useLabelHistory";
 import type { LabelHistoryItem } from "@/types/udi";
-import { api } from "@/lib/api";
-import { LABELS_API_ROUTES } from "@/features/labels/api/routes";
-import type { LabelHistoryDetail } from "@/types/udi";
 
 export default function Home() {
   const router = useRouter();
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [expiryDate, setExpiryDate] = useState("28/02/29");
 
-  const { preview, setPreview, loadingGenerate, dialogOpen, setDialogOpen, handleGenerate } =
+  const { previewSource, setPreviewSource, dialogOpen, setDialogOpen, handlePreviewLocally } =
     useLabels();
+
   const {
     historyRows,
     loadingHistory,
-    loadingReviewId,
-    setLoadingReviewId,
-    page,
-    pageSize,
     total,
-    fetchHistory,
+    hasPrev,
+    hasNext,
+    handleSearch,
     handleDelete,
+    invalidateHistory,
+    goToPrevPage,
+    goToNextPage,
   } = useLabelHistory();
-
-  const [filterGtin, setFilterGtin] = useState("");
-  const [filterBatchNo, setFilterBatchNo] = useState("");
-  const [expiryDate, setExpiryDate] = useState("28/02/29");
 
   useEffect(() => {
     const user = getAuthUser();
@@ -44,66 +40,31 @@ export default function Home() {
       router.replace("/login");
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAuthUser(user);
     setCheckingAuth(false);
   }, [router]);
 
-  useEffect(() => {
-    if (!checkingAuth && authUser) {
-      void fetchHistory(1, filterGtin, filterBatchNo);
-    }
-  }, [authUser, checkingAuth, fetchHistory, filterGtin, filterBatchNo]);
-
-  const handleFormSubmit = async (formData: {
+  const handleFormSubmit = (formData: {
     di: string;
     lot: string;
     expiryDate: string;
     serial: string;
     productionDate: string;
     remarks: string;
-  }) => {
-    const success = await handleGenerate(formData, authUser);
+  }): boolean => {
+    const success = handlePreviewLocally(formData);
     if (success) {
       setExpiryDate(formData.expiryDate);
-      void fetchHistory(1, filterGtin, filterBatchNo);
     }
     return success;
   };
 
-  const handleReview = async (row: LabelHistoryItem) => {
-    setLoadingReviewId(row.id);
-    try {
-      const detail = await api.get<LabelHistoryDetail>(
-        LABELS_API_ROUTES.historyDetail(row.id),
-        {
-          params: {
-            user_id: authUser?.user_id,
-          },
-        }
-      );
-      setExpiryDate(row.expiry_date ?? "");
-      setPreview({
-        di: row.gtin,
-        hri: row.hri,
-        gs1_element_string: row.full_string,
-        gs1_element_string_escaped: row.full_string,
-        datamatrix_base64: detail.data.datamatrix_base64,
-        gs1_128_base64: detail.data.gs1_128_base64,
-      });
-      setDialogOpen(true);
-    } finally {
-      setLoadingReviewId(null);
-    }
-  };
-
-  const handleSearch = (gtin: string, batchNo: string) => {
-    setFilterGtin(gtin);
-    setFilterBatchNo(batchNo);
-    void fetchHistory(1, gtin, batchNo);
-  };
-
-  const handleHistoryDelete = (id: number, onSuccess: () => void) => {
-    void handleDelete(id, onSuccess);
+  const handleReview = (row: LabelHistoryItem) => {
+    // Instant — no API call, bwip-js renders from hri in the dialog
+    setExpiryDate(row.expiry_date ?? "");
+    setPreviewSource({ kind: "history", data: row });
+    setDialogOpen(true);
   };
 
   if (checkingAuth || !authUser) {
@@ -113,26 +74,27 @@ export default function Home() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10">
       <PageHeader authUser={authUser} />
-      <LabelForm onSubmit={handleFormSubmit} isLoading={loadingGenerate} />
+      <LabelForm onSubmit={handleFormSubmit} />
       <LabelHistorySection
         rows={historyRows}
         loading={loadingHistory}
-        loadingReviewId={loadingReviewId}
-        page={page}
-        pageSize={pageSize}
         total={total}
+        hasPrev={hasPrev}
+        hasNext={hasNext}
         onSearch={handleSearch}
         onReview={handleReview}
-        onDelete={handleHistoryDelete}
-        onPrev={() => void fetchHistory(page - 1, filterGtin, filterBatchNo)}
-        onNext={() => void fetchHistory(page + 1, filterGtin, filterBatchNo)}
+        onDelete={handleDelete}
+        onPrev={goToPrevPage}
+        onNext={goToNextPage}
       />
       <PreviewDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        preview={preview}
+        previewSource={previewSource}
         expiryDate={expiryDate}
+        onSaved={invalidateHistory}
       />
     </main>
   );
 }
+

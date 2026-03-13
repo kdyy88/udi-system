@@ -50,20 +50,13 @@ class LabelCreateRequest(LabelInput):
     user_id: int = Field(ge=1)
 
 
-class LabelPreviewResponse(BaseModel):
+class LabelGenerateResponse(BaseModel):
+    history_id: int
+    created_at: datetime
     di: str
     hri: str
     gs1_element_string: str
     gs1_element_string_escaped: str
-    datamatrix_base64: str
-    gs1_128_base64: str
-    gs1_128_di_only_base64: str | None = None
-    gs1_128_pi_only_base64: str | None = None
-
-
-class LabelGenerateResponse(LabelPreviewResponse):
-    history_id: int
-    created_at: datetime
 
 
 class LabelHistoryResponse(BaseModel):
@@ -81,26 +74,13 @@ class LabelHistoryResponse(BaseModel):
 
 
 class LabelHistoryDetailResponse(LabelHistoryResponse):
-    datamatrix_base64: str
-    gs1_128_base64: str
+    """Detail endpoint — same fields as list item; barcodes rendered client-side."""
 
 
 class LabelHistoryListResponse(BaseModel):
     total: int
-    page: int
-    page_size: int
+    next_cursor: int | None
     items: list[LabelHistoryResponse]
-
-
-class LabelPreviewSvgResponse(BaseModel):
-    di: str
-    hri: str
-    gs1_element_string: str
-    gs1_element_string_escaped: str
-    datamatrix_svg: str
-    gs1_128_svg: str
-    gs1_128_di_only_svg: str | None = None
-    gs1_128_pi_only_svg: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -112,3 +92,4 @@ class LoginResponse(BaseModel):
     user_id: int
     username: str
     message: str
+
