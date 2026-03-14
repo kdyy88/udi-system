@@ -7,11 +7,13 @@ export type HealthResponse = {
 export type AuthUser = {
   user_id: number;
   username: string;
+  role: string;
 };
 
 export type LoginResponse = {
   user_id: number;
   username: string;
+  role: string;
   message: string;
 };
 

@@ -5,7 +5,12 @@ export const AUTH_STORAGE_KEY = "gs1_udi_auth_user";
 export type AuthUser = {
   user_id: number;
   username: string;
+  role: string;
 };
+
+export function isAdmin(user: AuthUser | null | undefined): boolean {
+  return user?.role === "admin";
+}
 
 export function setAuthUser(user: AuthUser): void {
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));

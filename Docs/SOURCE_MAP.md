@@ -1,7 +1,7 @@
 # 源码导读地图（GS1 UDI System）
 
-> **最后更新：v3.1（2026-03-14）**
-> 本文档反映当前架构。v1.x 的生成链路（后端 barcode_gen + base64）已废弃，v2.x 无批量功能，v3.0 引入批量打码，v3.1 精简组件结构，请以本文档为准。
+> **最后更新：v3.6（2026-03-14）**
+> 本文档反映当前架构。v1.x 的生成链路（后端 barcode_gen + base64）已废弃，v2.x 无批量功能，v3.0 引入批量打码，v3.1 精简组件结构，v3.5 引入可视化模板编辑器（拖拽画布 + 模板库），v3.6 补全模板管理页、单标签模板预览、GS1-128 6:1 比例约束、管理员直接编辑系统模板及若干 Bug 修复，请以本文档为准。
 
 这份文档帮助你快速建立"代码全景图"：
 
@@ -34,13 +34,20 @@
 - [frontend/app/page.tsx](frontend/app/page.tsx)
   - 主业务页：表单录入 → 本地 GS1 计算 → 打开预览弹窗 → `<HistoryTabs>`（批次总览 + 全部明细）。
 - [frontend/app/batch/page.tsx](frontend/app/batch/page.tsx)
-  - 批量打码页：Excel 上传 → 解析预览 → 模板选取 → 所见即所得样式预览 → 保存后端 → SVG ZIP 下载（6 阶段状态机）。
+  - 批量打码页：Excel 上传 → 解析预览 → **从模板库选取自定义模板**（`TemplateGallery mode="select"`）→ 所见即所得样式预览 → 保存后端 → SVG ZIP 下载（6 阶段状态机）。
 - [frontend/app/history/page.tsx](frontend/app/history/page.tsx)
   - 历史台账页：页头 + `<HistoryTabs>`，与首页共享同一组件。
 - [frontend/app/history/batch/[id]/page.tsx](frontend/app/history/batch/[id]/page.tsx)
   - 批次详情页：分页展示批次内所有标签 + "重新下载 ZIP" 按钮。
 - [frontend/app/(auth)/login/page.tsx](frontend/app/(auth)/login/page.tsx)
   - 登录页。
+- [frontend/app/editor/page.tsx](frontend/app/editor/page.tsx)（v3.5 新增，v3.6 扩展）
+  - 新建模板编辑器（`/editor`），zoom 滑块（0.3–2.0）。
+  - v3.6：支持 `?seed=sys-xxx` 预加载系统模板画布。管理员访问时进入直接编辑模式，顶栏呈现“更新系统模板”（主） + “另存为个人模板”（次）双按钒。
+- [frontend/app/editor/[id]/page.tsx](frontend/app/editor/[id]/page.tsx)（v3.5 新增）
+  - 编辑已有模板（`/editor/[id]`）：从 API 加载画布数据；保存调用 `useUpdateTemplate`。
+- [frontend/app/templates/page.tsx](frontend/app/templates/page.tsx)（v3.6 新增）
+  - 模板管理页（`/templates`）：`TemplateGallery mode="manage"`；传入 `isAdmin={isAdmin(authUser)}`。
 
 ---
 
@@ -49,22 +56,31 @@
 ### 路由层（API）
 
 - [backend/app/api/router.py](backend/app/api/router.py)
-  - 聚合所有子路由（auth / labels / batches）。
+  - 聚合所有子路由（auth / labels / batches / templates）。
 - [backend/app/api/auth.py](backend/app/api/auth.py)
-  - 登录接口：用户名密码校验（async）。
+  - 登录接口：用户名密码校验（async）；响应包含 `role` 字段。
+- [backend/app/api/system.py](backend/app/api/system.py)（v3.6 新增）
+  - 系统配置端点（`/system` 前缀）：
+    - `GET/PUT /system/hidden-templates`：读取/更新被隐藏的系统模板 ID 列表。
+    - `GET /system/template-overrides`：公开，返回所有画布覆写映射。
+    - `PUT/DELETE /system/template-override/{sys_id}`：管理员保存覆写 / 恢复出厂默认。
+  - 所有写操作校验 `User.role == "admin"`（非管理员 → 403）。
 - [backend/app/api/labels.py](backend/app/api/labels.py)
   - 生成（保存元数据，同时自动创建 `source="form"` 的单条 LabelBatch）、历史查询（cursor 分页）、历史明细、删除。
 - [backend/app/api/batches.py](backend/app/api/batches.py)
   - 批量接口：`POST /generate`（单事务建批+批量写 label_history）、`GET /batches`（游标分页列表）、`GET /batches/{id}`（详情+标签分页）、`DELETE /batches/{id}`（级联删除）。
+- [backend/app/api/templates.py](backend/app/api/templates.py)（v3.5 新增）
+  - 模板 CRUD：`GET/POST /api/v1/templates?user_id=…`、`GET/PUT/DELETE /api/v1/templates/{id}?user_id=…`。
+  - 所有操作通过 `user_id` query 参数校验归属（非本人 → 403）。
 
 ### 数据模型层（DB）
 
 - [backend/app/db/session.py](backend/app/db/session.py)
   - async engine（asyncpg / PostgreSQL）、`AsyncSessionLocal`、`get_db()` 依赖注入。
 - [backend/app/db/models.py](backend/app/db/models.py)
-  - 表结构：`User`、`LabelBatch`（批次主表）、`LabelHistory`（含 `batch_id` FK + CASCADE）。
+  - 表结构：`User`（含 `role` 列）、`LabelBatch`、`LabelHistory`（含 `batch_id` FK + CASCADE）、`LabelTemplate`（v3.5，含 `canvas_json JSONB`）、`SystemConfig`（v3.6，`key VARCHAR(100) UNIQUE` + `value JSONB`）。
 - [backend/alembic/](backend/alembic/)
-  - 数据库迁移文件；`0001_initial_schema.py` 初始全量建表；`0002_add_label_batch.py` 新增 `label_batch` 表与 `label_history.batch_id` 列。
+  - `0001` 初始全量建表；`0002` 新增 `label_batch`；`0003` 创建 `label_template`（v3.5）；`0004` 创建 `system_config` 并种入初始行（v3.6）。
 
 ### 数据校验层（Schema）
 
@@ -73,6 +89,8 @@
   - `LabelHistoryResponse` 含 `batch_id` 可空字段。
 - [backend/app/schemas/batch.py](backend/app/schemas/batch.py)
   - 批量接口的请求/响应模型：`BatchCreateRequest`（最多 500 行）、`BatchCreateResponse`、`LabelBatchSummary`、`LabelBatchListResponse`、`LabelBatchDetailResponse`。
+- [backend/app/schemas/template.py](backend/app/schemas/template.py)（v3.5 新增）
+  - `TemplateCreate`、`TemplateUpdate`、`TemplateRead`、`TemplateListResponse`。
 
 ### 业务层（Service）
 
@@ -112,11 +130,15 @@
   - 基于 TanStack Query 的批次列表管理（cursor 分页）；供历史页“批次总览” Tab 使用。
 - [frontend/hooks/useBatchUpload.ts](frontend/hooks/useBatchUpload.ts)
   - 批量上传状态机（6 阶段）：`idle → parsing → validated → saving → generating → done | error`。
-  - 调用 `parseExcelFile` 解析、`api.post` 保存、`exportBatchToZip` 生成 SVG ZIP。
-
+  - 调用 `parseExcelFile` 解析、`api.post` 保存、`exportBatchToZip` 生成 SVG ZIP。- [frontend/hooks/useLabelTemplates.ts](frontend/hooks/useLabelTemplates.ts)（v3.5 新增）
+  - 基于 TanStack Query 的模板 CRUD：`useListTemplates`、`useGetTemplate`、`useCreateTemplate`、`useUpdateTemplate`、`useDeleteTemplate`。
+- [frontend/hooks/useHiddenSystemTemplates.ts](frontend/hooks/useHiddenSystemTemplates.ts)（v3.6 新增）
+  - `useHiddenSystemTemplates()` 查询隐藏列表；`useSetHiddenSystemTemplates(userId)` Mutation。
+- [frontend/hooks/useSystemTemplateOverrides.ts](frontend/hooks/useSystemTemplateOverrides.ts)（v3.6 新增）
+  - `useSystemTemplateOverrides()` 查询画布覆写；`useSaveSystemTemplateOverride(userId)` / `useDeleteSystemTemplateOverride(userId)` Mutation。
 ### 组件层
 - [frontend/components/shared/Navbar.tsx](frontend/components/shared/Navbar.tsx)
-  - 全局导航栏（标签生成 / 批量打码 / 历史台账）；挂载于 `layout.tsx`。
+  - 全局导航栏（标签生成 / 批量打码 / 历史台账 / 模板编辑器）；挂载于 `layout.tsx`。
 - [frontend/components/labels/HistoryTabs.tsx](frontend/components/labels/HistoryTabs.tsx)
   - 自包含双 Tab 历史组件：批次总览（`BatchListTable` + `useLabelBatches`）| 全部明细（`DataTable` + `useLabelHistory` + 筛选）。
   - 内含 `PreviewDialog`；同时挂载于首页（表单下方）和历史台账页，两处完全一致。
@@ -125,10 +147,20 @@
 - [frontend/components/labels/PreviewDialog.tsx](frontend/components/labels/PreviewDialog.tsx)
   - 用 `useBwipPreview` 同步渲染条码；导出时调用 `saveLabelToBackend`。
   - `kind === "local"`：导出才保存后端；`kind === "history"`：只预览不重复保存。
+  - v3.6：模板下拉选择器，选中模板时调用 `renderCustomSvg` 实时渲染；SVG 格式直接下载原始字符串。使用 `effectiveSystemTemplates`（`applyOverrides()` 合并）确保和管理员修改保持一致。
 - [frontend/components/shared/DataTable.tsx](frontend/components/shared/DataTable.tsx)
   - 历史表格与翻页按钮（cursor 分页，hasPrev / hasNext 控制）。
 - [frontend/components/labels/PreviewTemplateCanvas.tsx](frontend/components/labels/PreviewTemplateCanvas.tsx)
-  - 预览模板画布渲染（紧凑/双码/明细），渲染入参为 SVG 字符串。
+  - 标签预览画布（v3.5 简化：移除旧模板 key，固定 DataMatrix + AI 文字布局，props 为 `{ preview, expiryDisplay }`）。
+- [frontend/components/editor/Canvas.tsx](frontend/components/editor/Canvas.tsx)（v3.5 新增）
+  - react-rnd 拖拽缩放白板；外层 CSS `transform:scale(zoom)` 缩放，内层 `widthPx×heightPx`；`BarcodeElement` 仅渲染占位 div（编辑器路径不调用 bwip-js）。
+- [frontend/components/editor/ElementToolbar.tsx](frontend/components/editor/ElementToolbar.tsx)（v3.5 新增）
+  - 左侧边栏：画布尺寸 mm 输入、添加元素按钮、撤销/重做/删除。
+- [frontend/components/editor/PropertiesPanel.tsx](frontend/components/editor/PropertiesPanel.tsx)（v3.5 新增）
+  - 右侧属性面板：位置/尺寸（mm 显示）、类型专属属性面板、GS1 AI 字段绑定下拉选择器。
+- [frontend/components/editor/TemplateGallery.tsx](frontend/components/editor/TemplateGallery.tsx)（v3.5 新增，v3.6 重写）
+  - 模板卡片网格；`mode="manage"` 显示编辑/删除操作；`mode="select"` 调用 `onSelect(definition, id)` 回调。
+  - v3.6 重写：两分区（系统默认 / 我的模板）；`isAdmin` prop 控制管理员按钒（编辑/恢复出厂/隐藏切换）；`applyOverrides()` 展现最新系统模板。
 - [frontend/components/ui](frontend/components/ui)
   - 基础 UI 组件（Button/Input/Dialog/DatePicker/Toaster）。
 
@@ -143,32 +175,50 @@
 - [frontend/features/labels/preview/export.ts](frontend/features/labels/preview/export.ts)
   - `exportPreviewNode(node, template, format)` — PNG / SVG / PDF 下载。
 
+### 状态管理层（v3.5 新增）
+
+- [frontend/stores/canvasStore.ts](frontend/stores/canvasStore.ts)（v3.5 新增，v3.6 扩展）
+  - Zustand + zundo temporal 中间件；`partialize` 仅追踪 `elements/widthPx/heightPx`；undo/redo 上限 50 步。
+  - `updateElement(id, patch: Record<string, unknown>)`；工厂函数 `makeBarcode` / `makeText` / `makeRect`。
+  - v3.6 扩展：`GS1_128_ASPECT_RATIO = 6`、`DATAMATRIX_ASPECT_RATIO = 1`、`barcodeAspectRatio(type)` 统一辅助函数；`makeBarcode` 对 GS1-128 默认 240×40px。
+
 ### 配置与工具层
 
 - [frontend/lib/gs1.ts](frontend/lib/gs1.ts)
   - 前端 GS1 同构工具库（镜像 `gs1_engine.py`）。
   - 含 `validateGtin14()`、`buildHri()`、`buildGs1ElementString()`、`calculateGs1CheckDigit()`。
   - **修改时须同步更新后端 `gs1_engine.py`**。
+- [frontend/lib/gs1Utils.ts](frontend/lib/gs1Utils.ts)（v3.5 新增）
+  - GS1 AI 字符串工具：`findAiText(hri, ai)`、`findAiValue(hri, ai)`、`escapeXml(s)`。
+  - 被 `svgTemplates.ts`、`batchExporter.ts`、`PreviewTemplateCanvas.tsx` 等共同引用。
 - [frontend/lib/excelParser.ts](frontend/lib/excelParser.ts)
   - SheetJS 解析 Excel 文件；自动检测表头（中英文均可）；每行客户端校验 GTIN-14 Mod-10；最多 500 行。
-- [frontend/lib/svgTemplates.ts](frontend/lib/svgTemplates.ts)
-  - 纯 SVG 字符串模板函数（`renderCompactSvg` / `renderDualSvg` / `renderDetailSvg`）。
-  - 无任何 DOM/React 依赖；布局与 `PreviewTemplateCanvas.tsx` 保持一致。
+- [frontend/lib/svgTemplates.ts](frontend/lib/svgTemplates.ts)（v3.5 重写，v3.6 修复）
+  - 旧三函数（`renderCompactSvg` / `renderDualSvg` / `renderDetailSvg`）已删除。
+  - 新导出 `renderCustomSvg(input, canvas: CanvasDefinition): string`：遍历 `canvas.elements`，按类型分发渲染（barcode → bwip-js SVG；text → 解析 fieldBinding 填入 AI 值；rect → `<rect>`）。
+  - v3.6 修复：`embedSvg` 改用嵌套 `<svg>` + `preserveAspectRatio="none"`，条码完全填满元素框，不留白边。
 - [frontend/lib/batchExporter.ts](frontend/lib/batchExporter.ts)
-  - 批量导出函数 `exportBatchToZip`：`barcode-svg.ts` → `svgTemplates.ts` → JSZip（纯矢量 SVG）。
+  - 批量导出 `exportBatchToZip(options: BatchExportOptions)`：`templateDefinition: CanvasDefinition` 替代旧 `template: TemplateKey`。
   - `fetchAllBatchLabels`：分页拉取批次内所有标签记录。
 - [frontend/lib/api.ts](frontend/lib/api.ts)
   - Axios 实例。
 - [frontend/lib/auth.ts](frontend/lib/auth.ts)
-  - 登录态存取（localStorage）。
-- [frontend/lib/preview-templates.ts](frontend/lib/preview-templates.ts)
-  - 模板元配置；`TemplateKey = "compact" | "dual" | "detail"`。
+  - 登录态存取（localStorage）；`AuthUser` 含 `role: string`；`isAdmin(user)` 工具函数。
+- [frontend/lib/systemTemplates.ts](frontend/lib/systemTemplates.ts)（v3.6 新增）
+  - 三套硬编码出厂系统模板（紧凑型/标准型/双码型），ID 前缀 `"sys-"`。
+  - `applyOverrides(overrides)`：将 DB 覆写合并至硬编码默认，返回新数组，不改变原始常量。
+  - 被 `TemplateGallery`、`PreviewDialog`、`editor/page.tsx` 共同引用。
+- [frontend/lib/preview-templates.ts](frontend/lib/preview-templates.ts)（v3.5 废弃为空壳）
+  - 已缩减为 `export type TemplateKey = never;`，仅保留兼容性存根，勿再引用。
 - [frontend/features/labels/api/routes.ts](frontend/features/labels/api/routes.ts)
-  - API 路径常量：`LABELS_API_ROUTES` + `BATCHES_API_ROUTES`。
+  - API 路径常量：`LABELS_API_ROUTES` + `BATCHES_API_ROUTES` + `TEMPLATE_ROUTES`（v3.5 新增）。
 - [frontend/types/udi.ts](frontend/types/udi.ts)
   - 前端类型定义（`LabelHistoryItem` 含 `batch_id` 可空字段）。
 - [frontend/types/batch.ts](frontend/types/batch.ts)
-  - 批量相关类型：`BatchTemplate`（即 `TemplateKey` 别名）、`ParsedRow`、`BatchPhase`、`LabelBatchSummary` 等。
+  - 批量相关类型：`BatchTemplate = CanvasDefinition`（v3.5 起，不再是 `TemplateKey` 字符串别名）、`ParsedRow`、`BatchPhase`、`LabelBatchSummary` 等。
+- [frontend/types/template.ts](frontend/types/template.ts)（v3.5 新增）
+  - 模板类型系统单一真实来源：`GS1AiField`、`BarcodeElement`、`TextElement`、`RectElement`、`CanvasElement`（判别联合）、`CanvasDefinition`、`LabelTemplateRecord`。
+  - 常量 `MM_TO_PX = 3.7795275591` 及 `mmToPx` / `pxToMm` / `recordToDefinition` 工具函数。
 
 ---
 
@@ -264,6 +314,38 @@
   → 点击"重新下载 ZIP" → exportBatchToZip()  [同批量打码链路 E]
 ```
 
+### G. 模板编辑器链路（v3.5 新增）
+
+```
+新建模板 → /editor
+  → ElementToolbar：添加元素 → canvasStore.addElement()
+               画布尺寸 mm 输入 → canvasStore.setDimensions()
+               撤销/重做       → canvasStore.temporal.undo()/.redo()
+  → Canvas（react-rnd）：
+      拖拽结束 → onDragStop  → canvasStore.updateElement(id, {x, y})
+      缩放结束 → onResizeStop → canvasStore.updateElement(id, {w, h, x, y})
+  → PropertiesPanel：字段绑定下拉 → canvasStore.updateElement(id, {fieldBinding: ai})
+  → 用户点击"保存"
+      → useCreateTemplate.mutate({ name, canvas_json: elements, canvas_width_px, canvas_height_px })
+          → POST /api/v1/templates?user_id=...
+          → 成功 → router.push("/editor/{id}")
+
+编辑模板 → /editor/[id]
+  → useGetTemplate(id, userId) → GET /api/v1/templates/{id}?user_id=...
+  → recordToDefinition(tmpl) → canvasStore.loadCanvas(def)
+  → 编辑流程同上
+  → 保存 → useUpdateTemplate.mutate({ id, ... }) → PUT /api/v1/templates/{id}?user_id=...
+
+批量打码页选模板 → TemplateGallery mode="select"
+  → useListTemplates(userId) → GET /api/v1/templates?user_id=...
+  → 点击卡片 → onSelect(recordToDefinition(record), record)
+      → setSelectedTemplate(def: CanvasDefinition)
+  → 用户点击"保存并生成" → startGenerate(selectedTemplate)
+      → exportBatchToZip({ templateDefinition: def, ... })
+          → 逐条: renderCustomSvg(labelInput, def)  [svgTemplates.ts]
+          → JSZip 打包 → file-saver 下载 .zip
+```
+
 ---
 
 ## 5) 新手阅读顺序（建议按这个来）
@@ -278,9 +360,10 @@
 4. 看前端预览渲染：
    - [frontend/features/labels/preview/useLabelPreviewOrchestrator.ts](frontend/features/labels/preview/useLabelPreviewOrchestrator.ts)
    - [frontend/features/labels/preview/barcode-svg.ts](frontend/features/labels/preview/barcode-svg.ts)
-5. 看前端模板系统：
-   - [frontend/lib/preview-templates.ts](frontend/lib/preview-templates.ts)
-   - [frontend/components/labels/PreviewTemplateCanvas.tsx](frontend/components/labels/PreviewTemplateCanvas.tsx)
+5. 看前端模板类型系统（v3.5 新增）：
+   - [frontend/types/template.ts](frontend/types/template.ts)
+   - [frontend/stores/canvasStore.ts](frontend/stores/canvasStore.ts)
+   - [frontend/components/editor/Canvas.tsx](frontend/components/editor/Canvas.tsx)
 6. 看批量打码（v3.0 新增）：
    - [frontend/lib/excelParser.ts](frontend/lib/excelParser.ts)
    - [frontend/lib/svgTemplates.ts](frontend/lib/svgTemplates.ts)
@@ -294,15 +377,22 @@
 | 需求 | 改这里 |
 |------|--------|
 | 改 GS1 规则（AI、FNC1、校验逻辑） | `backend/app/services/gs1_engine.py` **+** `frontend/lib/gs1.ts`（须同步） |
-| 改标签模板样式（单标签预览） | `frontend/lib/preview-templates.ts` + `PreviewTemplateCanvas.tsx` |
-| 改批量导出 SVG 布局 | `frontend/lib/svgTemplates.ts`（**同时**对齐 `PreviewTemplateCanvas.tsx`） |
+| 改单标签预览布局 | `frontend/components/labels/PreviewTemplateCanvas.tsx` |
+| 改批量导出 SVG 渲染逻辑 | `frontend/lib/svgTemplates.ts`（`renderCustomSvg`） |
 | 改导出格式逻辑（PNG/SVG/PDF） | `frontend/features/labels/preview/export.ts` |
 | 改批量上传 Excel 解析规则 | `frontend/lib/excelParser.ts` |
 | 改历史筛选条件 | `backend/app/api/labels.py` + `frontend/hooks/useLabelHistory.ts` |
 | 改历史页双 Tab 展示 / 批次列表样式 | `frontend/components/labels/HistoryTabs.tsx` |
 | 改批次相关 API | `backend/app/api/batches.py` + `backend/app/schemas/batch.py` |
-| 改数据库表结构 | `backend/app/db/models.py` **+** 新增 Alembic 迁移文件（不可跳过迁移） |
+| 改数据库表结构 | `backend/app/db/models.py` **+** 新增 Alembic 迁移文件（不可跳过迁移）<br>执行迁移：`cd backend && DATABASE_URL="postgresql+asyncpg://gs1user:gs1pass@localhost:5432/gs1udi" .venv/bin/alembic upgrade head` |
 | 改默认用户 / 认证逻辑 | `backend/app/services/auth_service.py` |
+| 改模板编辑器画布行为（拖拽/缩放/缩放比） | `frontend/stores/canvasStore.ts` + `frontend/components/editor/Canvas.tsx` |
+| 改模板编辑器属性面板 / 字段绑定选项 | `frontend/components/editor/PropertiesPanel.tsx` |
+| 改模板元素类型定义 | `frontend/types/template.ts`（**同时**更新 `canvasStore.ts` 工厂函数） |
+| 改模板后端接口 | `backend/app/api/templates.py` + `backend/app/schemas/template.py` |
+| 改系统配置（隐藏模板 / 画布覆写） | `backend/app/api/system.py` |
+| 改系统模板出厂默认画布 | `frontend/lib/systemTemplates.ts` |
+| 改 GS1 AI 字符串解析工具 | `frontend/lib/gs1Utils.ts` |
 
 ---
 
@@ -312,4 +402,6 @@
 
 **单标签**：登录 → 输入 DI/PI → **前端** GS1 计算 + bwip-js 渲染 → 用户导出时保存元数据到后端 → PostgreSQL 持久化 → cursor 分页查询历史 → 前端重渲染预览。
 
-**批量打码**：上传 Excel → 客户端 Mod-10 校验 → 单事务写 LabelBatch + LabelHistory（后端权威重算 HRI）→ 客户端 bwip-js + svgTemplates 纯 SVG 合图 → JSZip 打包下载 → 批次历史台账。
+**批量打码**：上传 Excel → 客户端 Mod-10 校验 → 单事务写 LabelBatch + LabelHistory（后端权威重算 HRI）→ 客户端 bwip-js + `renderCustomSvg(CanvasDefinition)` 纯 SVG 合图 → JSZip 打包下载 → 批次历史台账。
+
+**模板编辑器（v3.5）**：拖拽画布（react-rnd）+ Zustand/zundo 状态管理 → GS1 AI 字段绑定 → POST/PUT `/api/v1/templates` 持久化 PostgreSQL JSONB → 批量打码页从模板库选取并驱动 `renderCustomSvg` SVG 导出。

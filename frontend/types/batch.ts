@@ -1,7 +1,11 @@
 import type { LabelHistoryItem } from "@/types/udi";
-import type { TemplateKey } from "@/lib/preview-templates";
+import type { CanvasDefinition } from "@/types/template";
 
-export type { TemplateKey as BatchTemplate };
+/**
+ * v3.5: BatchTemplate is now a CanvasDefinition (custom, DB-persisted).
+ * The "compact" / "dual" / "detail" string keys are deprecated.
+ */
+export type BatchTemplate = CanvasDefinition;
 
 export type BatchSource = "excel" | "form";
 

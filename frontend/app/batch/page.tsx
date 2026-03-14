@@ -10,17 +10,16 @@ import { Upload, Download, CheckCircle, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { clearAuthUser, getAuthUser, type AuthUser } from "@/lib/auth";
 import { useBatchUpload } from "@/hooks/useBatchUpload";
-import type { BatchTemplate, ParsedRow } from "@/types/batch";
+import type { ParsedRow } from "@/types/batch";
+import type { CanvasDefinition, LabelTemplateRecord } from "@/types/template";
 import { buildHri } from "@/lib/gs1";
 import {
   createDataMatrixSvg,
   createNormalizedGs1Svg,
 } from "@/features/labels/preview/barcode-svg";
-import {
-  renderCompactSvg,
-  renderDualSvg,
-  renderDetailSvg,
-} from "@/lib/svgTemplates";
+import { renderCustomSvg } from "@/lib/svgTemplates";
+import { findAiText } from "@/lib/gs1Utils";
+import { TemplateGallery } from "@/components/editor/TemplateGallery";
 
 // ─── Template Excel Generator ─────────────────────────────────────────────────
 
@@ -89,49 +88,19 @@ function ParsedRowsTable({ rows }: { rows: ReturnType<typeof useBatchUpload>["ro
   );
 }
 
-// ─── Template Picker ──────────────────────────────────────────────────────────
-
-const TEMPLATE_OPTIONS: { value: BatchTemplate; label: string; desc: string }[] = [
-  { value: "compact", label: "紧凑型", desc: "DataMatrix + AI 文本，适合小型产品" },
-  { value: "dual", label: "双码型", desc: "DI GS1-128 + PI GS1-128 上下排列" },
-  { value: "detail", label: "明细型", desc: "含生产信息 + 双码 + HRI，适合出厂质检" },
-];
-
-function TemplatePicker({
-  value,
-  onChange,
-}: {
-  value: BatchTemplate;
-  onChange: (t: BatchTemplate) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-3">
-      {TEMPLATE_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => onChange(opt.value)}
-          className={`flex flex-col rounded-lg border-2 px-5 py-3 text-left transition-colors ${
-            value === opt.value
-              ? "border-primary bg-primary/5"
-              : "border-border hover:border-primary/50"
-          }`}
-        >
-          <span className="font-medium">{opt.label}</span>
-          <span className="text-sm text-muted-foreground">{opt.desc}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ─── Sample Label Preview ─────────────────────────────────────────────────────
 
-function findAiText(hri: string, ai: string): string {
-  return hri.match(new RegExp(`\\(${ai}\\)[^()]+`))?.[0] ?? "";
+function findAiTextLocal(hri: string, ai: string): string {
+  return findAiText(hri, ai);
 }
 
-function SampleLabelPreview({ row, template }: { row: ParsedRow; template: BatchTemplate }) {
+function SampleLabelPreview({
+  row,
+  templateDefinition,
+}: {
+  row: ParsedRow;
+  templateDefinition: CanvasDefinition;
+}) {
   const svgDataUrl = useMemo(() => {
     const hri = buildHri({
       di: row.di,
@@ -147,31 +116,29 @@ function SampleLabelPreview({ row, template }: { row: ParsedRow; template: Batch
     const gs1128Svg = createNormalizedGs1Svg(hri);
     const gs1128DiSvg = createNormalizedGs1Svg(`(01)${row.di}`);
     const piText = ["11", "17", "10", "21"]
-      .map((ai) => findAiText(hri, ai))
+      .map((ai) => findAiTextLocal(hri, ai))
       .filter(Boolean)
       .join("");
     const gs1128PiSvg = piText ? createNormalizedGs1Svg(piText) : null;
 
-    const input = {
-      gtin: row.di,
-      hri,
-      batch_no: row.lot,
-      expiry_date: row.expiry,
-      serial_no: row.serial,
-      production_date: row.production_date,
-      dataMatrixSvg,
-      gs1128Svg,
-      gs1128DiSvg,
-      gs1128PiSvg,
-    };
-
-    let svg: string;
-    if (template === "compact") svg = renderCompactSvg(input);
-    else if (template === "dual") svg = renderDualSvg(input);
-    else svg = renderDetailSvg(input);
+    const svg = renderCustomSvg(
+      {
+        gtin: row.di,
+        hri,
+        batch_no: row.lot,
+        expiry_date: row.expiry,
+        serial_no: row.serial,
+        production_date: row.production_date,
+        dataMatrixSvg,
+        gs1128Svg,
+        gs1128DiSvg,
+        gs1128PiSvg,
+      },
+      templateDefinition,
+    );
 
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }, [row, template]);
+  }, [row, templateDefinition]);
 
   return (
     <div className="space-y-2">
@@ -262,7 +229,8 @@ export default function BatchPage() {
   const router = useRouter();
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [template, setTemplate] = useState<BatchTemplate>("dual");
+  const [templateDefinition, setTemplateDefinition] = useState<CanvasDefinition | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
   const { phase, rows, errorMsg, progress, batchId, handleFileSelect, startGenerate, reset } =
     useBatchUpload(authUser?.user_id ?? 0);
@@ -353,8 +321,28 @@ export default function BatchPage() {
 
           <div className="space-y-3">
             <h2 className="font-medium">选择标签模板</h2>
-            <TemplatePicker value={template} onChange={setTemplate} />
-            {validRows[0] && <SampleLabelPreview row={validRows[0]} template={template} />}
+            {authUser && (
+              <TemplateGallery
+                userId={authUser.user_id}
+                mode="select"
+                selectedId={selectedTemplateId}
+                onSelect={(def, id) => {
+                  setTemplateDefinition(def);
+                  setSelectedTemplateId(id);
+                }}
+              />
+            )}
+            {!templateDefinition && (
+              <p className="text-sm text-muted-foreground">
+                请选择一个标签模板后再生成 ·{" "}
+                <a href="/editor" className="text-primary hover:underline">
+                  新建模板 →
+                </a>
+              </p>
+            )}
+            {templateDefinition && validRows[0] && (
+              <SampleLabelPreview row={validRows[0]} templateDefinition={templateDefinition} />
+            )}
           </div>
 
           {isGenerating && <ProgressBar current={progress.current} total={progress.total} />}
@@ -381,8 +369,8 @@ export default function BatchPage() {
           <div className="flex flex-wrap gap-3">
             {isValidated && (
               <Button
-                disabled={validRows.length === 0}
-                onClick={() => startGenerate(template)}
+                disabled={validRows.length === 0 || !templateDefinition}
+                onClick={() => templateDefinition && startGenerate(templateDefinition)}
               >
                 保存并生成 ({validRows.length} 个标签)
               </Button>

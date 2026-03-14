@@ -12,8 +12,9 @@ import { getAuthUser, type AuthUser } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { BATCHES_API_ROUTES } from "@/features/labels/api/routes";
 import { exportBatchToZip, fetchAllBatchLabels } from "@/lib/batchExporter";
-import type { LabelBatchDetailResponse, BatchTemplate } from "@/types/batch";
+import type { LabelBatchDetailResponse } from "@/types/batch";
 import type { LabelHistoryItem } from "@/types/udi";
+import type { CanvasDefinition } from "@/types/template";
 
 const PAGE_SIZE = 50;
 
@@ -78,7 +79,6 @@ export default function BatchDetailPage() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [cursor, setCursor] = useState<number | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const [template] = useState<BatchTemplate>("dual");
 
   useEffect(() => {
     const user = getAuthUser();
@@ -101,13 +101,19 @@ export default function BatchDetailPage() {
   const handleReDownload = useCallback(async () => {
     if (!authUser || !data) return;
     setDownloading(true);
+    // Re-download uses an empty canvas definition — just DataMatrix
+    const fallbackCanvas: CanvasDefinition = {
+      widthPx: 378,
+      heightPx: 227,
+      elements: [{ type: "barcode", id: "dm", x: 10, y: 10, w: 200, h: 200, barcodeType: "datamatrix" }],
+    };
     try {
       const labels = await fetchAllBatchLabels(batchId, authUser.user_id);
       const blob = await exportBatchToZip({
         batchId,
         batchName: data.name,
         labels,
-        template,
+        templateDefinition: fallbackCanvas,
         onProgress: () => {},
       });
       saveAs(blob, `UDI_${data.name}_${batchId}.zip`);
@@ -116,7 +122,7 @@ export default function BatchDetailPage() {
     } finally {
       setDownloading(false);
     }
-  }, [authUser, data, batchId, template]);
+  }, [authUser, data, batchId]);
 
   if (checkingAuth || !authUser) {
     return <main className="p-6 text-sm text-muted-foreground">正在检查登录状态…</main>;
