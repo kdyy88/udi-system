@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import LabelHistory, User
+from app.db.models import LabelBatch, LabelHistory, User
 from app.db.session import get_db
 from app.schemas.label import (
     LabelCreateRequest,
@@ -78,8 +78,20 @@ async def generate_label(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Auto-create a single-item batch so the record is traceable from batch history
+    batch = LabelBatch(
+        user_id=payload.user_id,
+        name=f"单标签 {payload.di}",
+        source="form",
+        total_count=1,
+        created_at=datetime.now(UTC),
+    )
+    db.add(batch)
+    await db.flush()  # obtain batch.id
+
     history = LabelHistory(
         user_id=payload.user_id,
+        batch_id=batch.id,
         gtin=payload.di,
         batch_no=payload.lot,
         expiry_date=payload.expiry,
@@ -156,6 +168,7 @@ async def list_label_history(
         LabelHistoryResponse(
             id=row.id,
             user_id=row.user_id,
+            batch_id=row.batch_id,
             gtin=row.gtin,
             batch_no=row.batch_no,
             expiry_date=row.expiry_date,
@@ -209,6 +222,7 @@ async def get_label_history_detail(
     return LabelHistoryDetailResponse(
         id=row.id,
         user_id=row.user_id,
+        batch_id=row.batch_id,
         gtin=row.gtin,
         batch_no=row.batch_no,
         expiry_date=row.expiry_date,

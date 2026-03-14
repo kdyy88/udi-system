@@ -4,10 +4,28 @@ import { jsPDF } from "jspdf";
 export type PreviewExportFormat = "png" | "svg" | "pdf";
 
 function downloadByDataUrl(dataUrl: string, filename: string) {
+  const [header, data] = dataUrl.split(",");
+  const mime = header.match(/:(.*?);/)?.[1] ?? "application/octet-stream";
+  const isBase64 = header.includes(";base64");
+
+  let blob: Blob;
+  if (isBase64) {
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    blob = new Blob([bytes], { type: mime });
+  } else {
+    blob = new Blob([decodeURIComponent(data)], { type: mime });
+  }
+
+  const blobUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.href = dataUrl;
+  link.href = blobUrl;
   link.download = filename;
   link.click();
+  URL.revokeObjectURL(blobUrl);
 }
 
 export async function exportPreviewNode(

@@ -20,6 +20,7 @@ services:
     working_dir: /app/backend
     volumes:
       - ./:/app
+      - /app/backend/.venv
     environment:
       DATABASE_URL: postgresql+asyncpg://gs1user:gs1pass@postgres:5432/gs1udi
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
@@ -28,13 +29,18 @@ services:
       - -lc
       - |
         set -e
-        apt-get update -qq && apt-get install -y -qq ghostscript
         pip install uv -q
         uv sync
         uv run alembic upgrade head
         uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,13 +50,16 @@ services:
     working_dir: /app/frontend
     volumes:
       - ./:/app
+      - /app/frontend/node_modules
     environment:
       CI: "true"
+      BACKEND_URL: http://backend:8000
     command: ["sh", "-lc", "corepack enable && pnpm install && pnpm dev --hostname 0.0.0.0 --port 3000"]
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_dev_data:

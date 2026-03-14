@@ -53,6 +53,7 @@ export type PreviewSource =
 export type LabelHistoryItem = {
   id: number;
   user_id: number;
+  batch_id: number | null;
   gtin: string;
   batch_no: string | null;
   expiry_date: string | null;

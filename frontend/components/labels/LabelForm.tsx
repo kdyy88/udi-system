@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
@@ -36,7 +37,7 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
   const [diError, setDiError] = useState("");
   const [lot, setLot] = useState("LOT202603");
   const [expiryDate, setExpiryDate] = useState(defaultExpiryDate);
-  const [serial, setSerial] = useState("SN0001");
+  const [serial, setSerial] = useState("");
   const [productionDate, setProductionDate] = useState(defaultProductionDate);
   const [remarks, setRemarks] = useState("");
 
@@ -134,7 +135,13 @@ export function LabelForm({ onSubmit, isLoading = false }: LabelFormProps) {
           />
         </div>
 
-        <div className="flex items-center justify-end sm:col-span-2">
+        <div className="flex items-center justify-end gap-3 sm:col-span-2">
+          <Link
+            href="/batch"
+            className="inline-flex h-9 min-w-36 items-center justify-center rounded-lg border border-input bg-background px-2.5 text-sm font-medium whitespace-nowrap transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            批量上传
+          </Link>
           <Button
             type="submit"
             size="lg"
