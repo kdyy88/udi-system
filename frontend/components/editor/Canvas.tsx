@@ -35,13 +35,12 @@ const NUDGE_SMALL = 1;
 
 function RndElement({ id, zoom, gridPx, snapEnabled }: { id: string; zoom: number; gridPx: number; snapEnabled: boolean }) {
   const el = useCanvasStore((s) => s.elements.find((e) => e.id === id));
-  const selectedId = useCanvasStore((s) => s.selectedId);
+  const isSelected = useCanvasStore((s) => s.selectedIds.includes(id));
   const setSelected = useCanvasStore((s) => s.setSelected);
+  const toggleSelected = useCanvasStore((s) => s.toggleSelected);
   const updateElement = useCanvasStore((s) => s.updateElement);
-
   if (!el) return null;
 
-  const isSelected = selectedId === id;
   const aspectLock = el.type === "barcode" ? barcodeAspectRatio(el.barcodeType) : false;
   const snapGrid: [number, number] = snapEnabled ? [gridPx, gridPx] : [8, 8];
 
@@ -56,7 +55,14 @@ function RndElement({ id, zoom, gridPx, snapEnabled }: { id: string; zoom: numbe
       lockAspectRatio={aspectLock}
       dragGrid={snapGrid}
       resizeGrid={snapGrid}
-      onMouseDown={() => setSelected(id)}
+      onMouseDown={(e) => {
+        // Shift+click: toggle into multi-selection; plain click: single-select
+        if ((e as MouseEvent).shiftKey) {
+          toggleSelected(id);
+        } else {
+          setSelected(id);
+        }
+      }}
       onDragStop={(_e, d) => {
         updateElement(id, { x: d.x, y: d.y });
       }}
@@ -157,30 +163,31 @@ export function Canvas({ zoom = 1 }: { zoom?: number }) {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
-      const { selectedId, elements, updateElement, deleteElement, widthPx: cw, heightPx: ch } =
+      const { selectedIds, elements, updateElement, deleteElements, widthPx: cw, heightPx: ch } =
         useCanvasStore.getState();
-      if (!selectedId) return;
+      if (selectedIds.length === 0) return;
 
-      const el = elements.find((el) => el.id === selectedId);
-      if (!el) return;
+      const isArrow = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key);
+      const isDel = e.key === "Delete" || e.key === "Backspace";
+      if (!isArrow && !isDel) return;
+      e.preventDefault();
 
+      if (isDel) {
+        deleteElements(selectedIds);
+        return;
+      }
+
+      // Nudge: plain Arrow = ±1px, Shift+Arrow = ±10px
+      // (when Shift is held for multi-select clicks we still want nudge — it's unambiguous
+      //  because Shift+Arrow never triggers toggleSelected)
       const step = e.shiftKey ? NUDGE_BIG : NUDGE_SMALL;
-
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        updateElement(selectedId, { x: Math.max(0, el.x - step) });
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        updateElement(selectedId, { x: Math.min(cw - el.w, el.x + step) });
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        updateElement(selectedId, { y: Math.max(0, el.y - step) });
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        updateElement(selectedId, { y: Math.min(ch - el.h, el.y + step) });
-      } else if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault();
-        deleteElement(selectedId);
+      for (const id of selectedIds) {
+        const el = elements.find((el) => el.id === id);
+        if (!el) continue;
+        if (e.key === "ArrowLeft")  updateElement(id, { x: Math.max(0, el.x - step) });
+        if (e.key === "ArrowRight") updateElement(id, { x: Math.min(cw - el.w, el.x + step) });
+        if (e.key === "ArrowUp")    updateElement(id, { y: Math.max(0, el.y - step) });
+        if (e.key === "ArrowDown")  updateElement(id, { y: Math.min(ch - el.h, el.y + step) });
       }
     };
 

@@ -18,8 +18,8 @@ type CanvasState = {
   heightPx: number;
   // Element DSL
   elements: CanvasElement[];
-  // Selection
-  selectedId: string | null;
+  // Selection — supports multi-select via Shift+click
+  selectedIds: string[];
   // Grid / snap
   snapEnabled: boolean;
   gridPx: number; // px per grid cell; 1 mm ≈ 3.78 px
@@ -30,8 +30,10 @@ type CanvasActions = {
   addElement: (el: Omit<CanvasElement, "id">) => void;
   updateElement: (id: string, patch: Record<string, unknown>) => void;
   deleteElement: (id: string) => void;
+  deleteElements: (ids: string[]) => void;
   // Selection
-  setSelected: (id: string | null) => void;
+  setSelected: (id: string | null) => void;   // null = clear; string = single select
+  toggleSelected: (id: string) => void;        // Shift+click: add/remove from set
   // Canvas size
   setCanvasSize: (widthPx: number, heightPx: number) => void;
   // Grid / snap
@@ -66,7 +68,7 @@ export const useCanvasStore = create<CanvasStore>()(
       widthPx: DEFAULT_WIDTH,
       heightPx: DEFAULT_HEIGHT,
       elements: [],
-      selectedId: null,
+      selectedIds: [],
       snapEnabled: false,
       gridPx: Math.round(MM_TO_PX_RATIO * 2), // 2 mm default grid
 
@@ -84,10 +86,23 @@ export const useCanvasStore = create<CanvasStore>()(
       deleteElement: (id) =>
         set((s) => ({
           elements: s.elements.filter((el) => el.id !== id),
-          selectedId: s.selectedId === id ? null : s.selectedId,
+          selectedIds: s.selectedIds.filter((i) => i !== id),
         })),
 
-      setSelected: (id) => set({ selectedId: id }),
+      deleteElements: (ids) =>
+        set((s) => ({
+          elements: s.elements.filter((el) => !ids.includes(el.id)),
+          selectedIds: s.selectedIds.filter((i) => !ids.includes(i)),
+        })),
+
+      setSelected: (id) => set({ selectedIds: id === null ? [] : [id] }),
+
+      toggleSelected: (id) =>
+        set((s) => ({
+          selectedIds: s.selectedIds.includes(id)
+            ? s.selectedIds.filter((i) => i !== id)
+            : [...s.selectedIds, id],
+        })),
 
       setCanvasSize: (widthPx, heightPx) => set({ widthPx, heightPx }),
 
@@ -100,11 +115,11 @@ export const useCanvasStore = create<CanvasStore>()(
           widthPx: def.widthPx,
           heightPx: def.heightPx,
           elements: def.elements,
-          selectedId: null,
+          selectedIds: [],
         }),
 
       resetCanvas: () =>
-        set({ elements: [], selectedId: null, widthPx: DEFAULT_WIDTH, heightPx: DEFAULT_HEIGHT }),
+        set({ elements: [], selectedIds: [], widthPx: DEFAULT_WIDTH, heightPx: DEFAULT_HEIGHT }),
 
       canvasDef: () => {
         const { widthPx, heightPx, elements } = get();

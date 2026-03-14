@@ -7,25 +7,126 @@ import {
   AlignVerticalJustifyStart,
   AlignVerticalJustifyCenter,
   AlignVerticalJustifyEnd,
+  AlignStartVertical,
+  AlignCenterVertical,
+  AlignEndVertical,
+  AlignStartHorizontal,
+  AlignCenterHorizontal,
+  AlignEndHorizontal,
+  AlignHorizontalDistributeCenter,
+  AlignVerticalDistributeCenter,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useCanvasStore, barcodeAspectRatio } from "@/stores/canvasStore";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { pxToMm, mmToPx, GS1_AI_LABELS, type GS1AiField, type BarcodeType } from "@/types/template";
 
 export function PropertiesPanel() {
-  const selectedId = useCanvasStore((s) => s.selectedId);
+  const selectedIds = useCanvasStore(useShallow((s) => s.selectedIds));
   const elements = useCanvasStore((s) => s.elements);
   const updateElement = useCanvasStore((s) => s.updateElement);
   const widthPx = useCanvasStore((s) => s.widthPx);
   const heightPx = useCanvasStore((s) => s.heightPx);
 
-  const el = elements.find((e) => e.id === selectedId);
+  // ── Multi-select: relative alignment panel ───────────────────────────────
+  if (selectedIds.length > 1) {
+    const selected = elements.filter((e) => selectedIds.includes(e.id));
+
+    // Bounding-box edges
+    const minX  = Math.min(...selected.map((e) => e.x));
+    const minY  = Math.min(...selected.map((e) => e.y));
+    const maxX  = Math.max(...selected.map((e) => e.x + e.w));
+    const maxY  = Math.max(...selected.map((e) => e.y + e.h));
+    const midX  = (minX + maxX) / 2;
+    const midY  = (minY + maxY) / 2;
+
+    // Align relative to each other (bounding-box edges / center)
+    const alignLeft    = () => selected.forEach((e) => updateElement(e.id, { x: minX }));
+    const alignCenterH = () => selected.forEach((e) => updateElement(e.id, { x: Math.round(midX - e.w / 2) }));
+    const alignRight   = () => selected.forEach((e) => updateElement(e.id, { x: maxX - e.w }));
+    const alignTop     = () => selected.forEach((e) => updateElement(e.id, { y: minY }));
+    const alignCenterV = () => selected.forEach((e) => updateElement(e.id, { y: Math.round(midY - e.h / 2) }));
+    const alignBottom  = () => selected.forEach((e) => updateElement(e.id, { y: maxY - e.h }));
+
+    // Distribute: sort by position, spread evenly
+    const distributeH = () => {
+      const sorted = [...selected].sort((a, b) => a.x - b.x);
+      const totalW  = sorted.reduce((s, e) => s + e.w, 0);
+      const gap     = (maxX - minX - totalW) / (sorted.length - 1);
+      let cursor = minX;
+      sorted.forEach((e) => {
+        updateElement(e.id, { x: Math.round(cursor) });
+        cursor += e.w + gap;
+      });
+    };
+    const distributeV = () => {
+      const sorted = [...selected].sort((a, b) => a.y - b.y);
+      const totalH  = sorted.reduce((s, e) => s + e.h, 0);
+      const gap     = (maxY - minY - totalH) / (sorted.length - 1);
+      let cursor = minY;
+      sorted.forEach((e) => {
+        updateElement(e.id, { y: Math.round(cursor) });
+        cursor += e.h + gap;
+      });
+    };
+
+    return (
+      <div className="space-y-4 text-sm">
+        <p className="text-xs text-muted-foreground">已选中 {selectedIds.length} 个元素</p>
+
+        <Section title="相对对齐">
+          <p className="text-xs text-muted-foreground">水平</p>
+          <div className="grid grid-cols-3 gap-1">
+            <Button size="sm" variant="outline" title="左边对齐" onClick={alignLeft}>
+              <AlignStartVertical className="size-4" />
+            </Button>
+            <Button size="sm" variant="outline" title="水平轴居中对齐" onClick={alignCenterH}>
+              <AlignCenterVertical className="size-4" />
+            </Button>
+            <Button size="sm" variant="outline" title="右边对齐" onClick={alignRight}>
+              <AlignEndVertical className="size-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">垂直</p>
+          <div className="grid grid-cols-3 gap-1">
+            <Button size="sm" variant="outline" title="顶边对齐" onClick={alignTop}>
+              <AlignStartHorizontal className="size-4" />
+            </Button>
+            <Button size="sm" variant="outline" title="垂直轴居中对齐" onClick={alignCenterV}>
+              <AlignCenterHorizontal className="size-4" />
+            </Button>
+            <Button size="sm" variant="outline" title="底边对齐" onClick={alignBottom}>
+              <AlignEndHorizontal className="size-4" />
+            </Button>
+          </div>
+        </Section>
+
+        {selectedIds.length >= 3 && (
+          <Section title="等距分布">
+            <div className="grid grid-cols-2 gap-1">
+              <Button size="sm" variant="outline" title="水平等距" onClick={distributeH}>
+                <AlignHorizontalDistributeCenter className="size-4" />
+                <span className="ml-1 text-xs">水平</span>
+              </Button>
+              <Button size="sm" variant="outline" title="垂直等距" onClick={distributeV}>
+                <AlignVerticalDistributeCenter className="size-4" />
+                <span className="ml-1 text-xs">垂直</span>
+              </Button>
+            </div>
+          </Section>
+        )}
+      </div>
+    );
+  }
+
+  // ── Single-select: show element properties ───────────────────────────────
+  const el = elements.find((e) => e.id === selectedIds[0]);
 
   if (!el) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        选中元素后在此查看属性
+      <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground px-2">
+        点击选中元素<br />Shift+点击 多选
       </div>
     );
   }

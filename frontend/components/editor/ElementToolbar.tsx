@@ -8,8 +8,8 @@ import { pxToMm, mmToPx } from "@/types/template";
 
 export function ElementToolbar() {
   const addElement = useCanvasStore((s) => s.addElement);
-  const deleteElement = useCanvasStore((s) => s.deleteElement);
-  const selectedId = useCanvasStore((s) => s.selectedId);
+  const deleteElements = useCanvasStore((s) => s.deleteElements);
+  const selectedIds = useCanvasStore((s) => s.selectedIds);
   const widthPx = useCanvasStore((s) => s.widthPx);
   const heightPx = useCanvasStore((s) => s.heightPx);
   const setCanvasSize = useCanvasStore((s) => s.setCanvasSize);
@@ -126,9 +126,9 @@ export function ElementToolbar() {
             size="sm"
             variant="outline"
             className="flex-1 text-destructive hover:bg-destructive/10"
-            disabled={!selectedId}
-            onClick={() => selectedId && deleteElement(selectedId)}
-            title="删除选中元素"
+            disabled={selectedIds.length === 0}
+            onClick={() => selectedIds.length > 0 && deleteElements(selectedIds)}
+            title={selectedIds.length > 1 ? `删除 ${selectedIds.length} 个元素` : "删除选中元素"}
           >
             <Trash2 className="size-4" />
           </Button>
