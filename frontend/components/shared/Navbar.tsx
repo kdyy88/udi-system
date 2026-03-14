@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, LogOut, Menu, UserCircle2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,10 +73,11 @@ export function Navbar() {
         <div className="flex min-w-0 items-center justify-end gap-2 xl:gap-3">
           <div className="xl:hidden">
             <DropdownMenu>
-              <DropdownMenuTrigger>
-                <Button variant="outline" size="icon" aria-label="打开导航菜单">
+              <DropdownMenuTrigger
+                aria-label="打开导航菜单"
+                className={buttonVariants({ variant: "outline", size: "icon" })}
+              >
                   <Menu className="size-4" />
-                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuLabel>页面导航</DropdownMenuLabel>
@@ -96,13 +97,17 @@ export function Navbar() {
 
           {authUser ? (
             <DropdownMenu>
-              <DropdownMenuTrigger>
-                <Button variant="outline" size="sm" className="max-w-[44vw] gap-2 sm:max-w-xs xl:max-w-none">
+              <DropdownMenuTrigger
+                className={buttonVariants({
+                  variant: "outline",
+                  size: "sm",
+                  className: "max-w-[44vw] gap-2 sm:max-w-xs xl:max-w-none",
+                })}
+              >
                   <UserCircle2 className="size-4 text-muted-foreground" />
                   <span className="hidden text-muted-foreground sm:inline">当前用户：</span>
                   <span className="truncate">{authUser.username}</span>
                   <ChevronDown className="size-4 text-muted-foreground" />
-                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel className="flex items-center gap-2">
