@@ -15,21 +15,65 @@ GS1 UDI 标签生成系统。**当前版本：v3.6**
 udi-system/
 ├── backend/
 │   ├── app/
-│   │   ├── api/          # 路由层
-│   │   ├── db/           # 数据库会话与模型
-│   │   ├── schemas/      # 请求/响应模型
-│   │   └── services/     # 业务逻辑（GS1、认证）
-│   ├── alembic/          # 数据库迁移文件
+│   │   ├── api/
+│   │   │   ├── auth.py           # 登录接口（含 role 字段）
+│   │   │   ├── batches.py        # 批量生成、批次列表/详情/删除
+│   │   │   ├── labels.py         # 单标签生成、历史查询/删除
+│   │   │   ├── router.py         # 聚合所有子路由
+│   │   │   ├── system.py         # 系统配置（隐藏模板 / 画布覆写）
+│   │   │   ├── templates.py      # 用户模板 CRUD
+│   │   │   └── v1/health.py      # 健康检查
+│   │   ├── db/
+│   │   │   ├── models.py         # ORM：User / LabelBatch / LabelHistory / LabelTemplate / SystemConfig
+│   │   │   └── session.py        # async engine + get_db()
+│   │   ├── schemas/              # Pydantic 请求/响应模型
+│   │   └── services/             # gs1_engine.py / auth_service.py
+│   ├── alembic/versions/
+│   │   ├── 0001_initial_schema.py
+│   │   ├── 0002_add_label_batch.py
+│   │   ├── 0003_add_label_template.py
+│   │   └── 0004_add_system_config.py
 │   └── main.py
 ├── frontend/
-│   ├── app/              # 页面（登录、主页、批量打码、历史台账）
-│   ├── components/       # UI 与业务组件（含 HistoryTabs）
-│   ├── features/         # 预览、导出、保存逻辑
-│   ├── hooks/            # useLabels、useLabelHistory、useBatchUpload 等
-│   ├── lib/              # API 封装、GS1 工具、Excel 解析、SVG 模板
+│   ├── app/
+│   │   ├── (auth)/login/         # 登录页
+│   │   ├── batch/                # 批量打码页
+│   │   ├── editor/               # 新建模板编辑器（支持 ?seed=sys-xxx）
+│   │   ├── editor/[id]/          # 编辑已有模板
+│   │   ├── history/              # 历史台账页
+│   │   ├── history/batch/[id]/   # 批次详情页
+│   │   ├── templates/            # 标签模板管理页
+│   │   └── page.tsx              # 主页（单标签生成）
+│   ├── components/
+│   │   ├── editor/               # Canvas / ElementToolbar / PropertiesPanel / TemplateGallery
+│   │   ├── labels/               # PreviewDialog / LabelForm / HistoryTabs 等
+│   │   ├── shared/               # Navbar / DataTable / Footer
+│   │   └── ui/                   # shadcn/ui 基础组件
+│   ├── features/labels/preview/  # bwip-js 渲染 / 导出 / 保存
+│   ├── hooks/
+│   │   ├── useHiddenSystemTemplates.ts
+│   │   ├── useLabelHistory.ts
+│   │   ├── useLabelTemplates.ts
+│   │   ├── useLabels.ts
+│   │   ├── useBatchUpload.ts
+│   │   └── useSystemTemplateOverrides.ts
+│   ├── lib/
+│   │   ├── api.ts / auth.ts / gs1.ts / gs1Utils.ts
+│   │   ├── svgTemplates.ts       # renderCustomSvg（CanvasDefinition → SVG 字符串）
+│   │   ├── systemTemplates.ts    # 三套出厂系统模板 + applyOverrides()
+│   │   └── batchExporter.ts / excelParser.ts / dateUtils.ts
+│   ├── stores/
+│   │   └── canvasStore.ts        # Zustand + zundo（画布状态 + 撤销/重做）
 │   └── types/
-├── .vscode/tasks.json    # 一键启动任务
-└── docker-compose.yml
+│       ├── template.ts           # CanvasDefinition / CanvasElement 等类型
+│       ├── udi.ts                # AuthUser（含 role）/ LoginResponse / LabelHistoryItem 等
+│       └── batch.ts
+├── Docs/
+│   ├── SOURCE_MAP.md
+│   └── 更新日志v3.6.md
+├── .vscode/tasks.json            # 一键启动任务
+├── docker-compose.yml
+└── docker-compose.prod.yml
 ```
 
 ---
