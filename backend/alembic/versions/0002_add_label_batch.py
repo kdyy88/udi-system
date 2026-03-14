@@ -17,34 +17,41 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "label_batch",
-        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.Integer, sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("name", sa.String(200), nullable=False),
-        sa.Column("source", sa.String(20), nullable=False, server_default="form"),
-        sa.Column("total_count", sa.Integer, nullable=False, server_default="1"),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-    )
-    op.create_index("ix_label_batch_id", "label_batch", ["id"])
-    op.create_index("ix_label_batch_user_id", "label_batch", ["user_id"])
-    op.create_index("ix_lb_user_id_desc", "label_batch", ["user_id", "id"])
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_tables = inspector.get_table_names()
 
-    op.add_column(
-        "label_history",
-        sa.Column(
-            "batch_id",
-            sa.Integer,
-            sa.ForeignKey("label_batch.id", ondelete="CASCADE"),
-            nullable=True,
-        ),
-    )
-    op.create_index("ix_lh_batch_id", "label_history", ["batch_id"])
+    if "label_batch" not in existing_tables:
+        op.create_table(
+            "label_batch",
+            sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+            sa.Column("user_id", sa.Integer, sa.ForeignKey("users.id"), nullable=False),
+            sa.Column("name", sa.String(200), nullable=False),
+            sa.Column("source", sa.String(20), nullable=False, server_default="form"),
+            sa.Column("total_count", sa.Integer, nullable=False, server_default="1"),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.text("now()"),
+            ),
+        )
+        op.create_index("ix_label_batch_id", "label_batch", ["id"])
+        op.create_index("ix_label_batch_user_id", "label_batch", ["user_id"])
+        op.create_index("ix_lb_user_id_desc", "label_batch", ["user_id", "id"])
+
+    existing_cols = {c["name"] for c in inspector.get_columns("label_history")}
+    if "batch_id" not in existing_cols:
+        op.add_column(
+            "label_history",
+            sa.Column(
+                "batch_id",
+                sa.Integer,
+                sa.ForeignKey("label_batch.id", ondelete="CASCADE"),
+                nullable=True,
+            ),
+        )
+        op.create_index("ix_lh_batch_id", "label_history", ["batch_id"])
 
 
 def downgrade() -> None:
