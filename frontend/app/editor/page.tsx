@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Save, RotateCcw } from "lucide-react";
@@ -18,7 +18,7 @@ import { SYSTEM_TEMPLATES } from "@/lib/systemTemplates";
 import { api } from "@/lib/api";
 import type { CanvasDefinition } from "@/types/template";
 
-export default function NewEditorPage() {
+function NewEditorPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { authUser, checkingAuth } = useRequireAuth();
@@ -172,5 +172,13 @@ export default function NewEditorPage() {
         </aside>
       </div>
     </main>
+  );
+}
+
+export default function NewEditorPage() {
+  return (
+    <Suspense fallback={<main className="p-6 text-sm text-muted-foreground">正在加载编辑器…</main>}>
+      <NewEditorPageContent />
+    </Suspense>
   );
 }
