@@ -62,6 +62,7 @@ class LabelGenerateResponse(BaseModel):
 class LabelHistoryResponse(BaseModel):
     id: int
     user_id: int
+    batch_id: int | None = None
     gtin: str
     batch_no: str | None
     expiry_date: str | None
