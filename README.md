@@ -18,6 +18,7 @@ udi-system/
 │   │   ├── api/
 │   │   │   ├── auth.py           # 登录接口（含 role 字段）
 │   │   │   ├── batches.py        # 批量生成、批次列表/详情/删除
+│   │   │   ├── helpers.py        # API 公共 helper（日志 / 权限 / owned-record 查询）
 │   │   │   ├── labels.py         # 单标签生成、历史查询/删除
 │   │   │   ├── router.py         # 聚合所有子路由
 │   │   │   ├── system.py         # 系统配置（隐藏模板 / 画布覆写）
@@ -32,7 +33,8 @@ udi-system/
 │   │   ├── 0001_initial_schema.py
 │   │   ├── 0002_add_label_batch.py
 │   │   ├── 0003_add_label_template.py
-│   │   └── 0004_add_system_config.py
+│   │   ├── 0004_add_system_config.py
+│   │   └── 0005_add_batch_template_snapshot.py
 │   └── main.py
 ├── frontend/
 │   ├── app/
@@ -56,6 +58,7 @@ udi-system/
 │   │   ├── useLabelTemplates.ts
 │   │   ├── useLabels.ts
 │   │   ├── useBatchUpload.ts
+│   │   ├── useRequireAuth.ts
 │   │   └── useSystemTemplateOverrides.ts
 │   ├── lib/
 │   │   ├── api.ts / auth.ts / gs1.ts / gs1Utils.ts
@@ -147,7 +150,7 @@ pnpm install && pnpm dev
 | POST | `/api/v1/labels/generate` | 生成标签并入库（导出时触发） |
 | GET  | `/api/v1/labels/history` | 历史查询，支持 `gtin`、`batch_no`、cursor 分页 |
 | DELETE | `/api/v1/labels/history/{id}` | 删除历史记录 |
-| POST | `/api/v1/batches/generate` | 批量生成：单事务写 LabelBatch + LabelHistory（最多 500 行） |
+| POST | `/api/v1/batches/generate` | 批量生成：单事务写 LabelBatch + LabelHistory，并保存模板快照（最多 500 行） |
 | GET  | `/api/v1/batches` | 批次列表，游标分页 |
 | GET  | `/api/v1/batches/{id}` | 批次详情 + 标签游标分页 |
 | DELETE | `/api/v1/batches/{id}` | 删除批次（CASCADE 删除所有子记录） |
@@ -168,9 +171,11 @@ pnpm install && pnpm dev
 - **后端保存时机**：仅用户点击"导出"按钮时触发 `POST /generate`，预览不入库
 - **GS1 逻辑同构**：`lib/gs1.ts`（前端）与 `gs1_engine.py`（后端）保持相同实现，修改时须同步更新
 - **批量导出**：纯客户端 SVG 合成（`barcode-svg.ts` → `svgTemplates.ts` → JSZip），无服务端渲染，无 DOM 依赖；上传页提供所见即所得预览（渲染路径与导出完全一致）
+- **批次重下载**：批量生成时把 `template_definition` 快照持久化到 `label_batch`，历史详情页重新下载 ZIP 会复用原批次模板
 - **历史统一**：首页与历史台账页共享 `<HistoryTabs>` 组件，双 Tab 展示批次总览与全部明细
 - **历史缓存**：TanStack Query，staleTime 30 秒，翻页不闪烁
 - **数据库迁移**：新增表/列必须通过 `alembic/versions/` 迁移文件操作，不可直接改 `models.py` 后重启
+- **认证守卫**：前端页面统一通过 `useRequireAuth()` 读取本地登录态与退出登录逻辑，`AuthUser` 单一类型来源为 `types/udi.ts`
 - **系统模板**：三套硬编码出厂默认（`lib/systemTemplates.ts`），管理员可在编辑器中直接编辑本体，覆写持久化至 `system_config` 表（JSONB），通过 `applyOverrides()` 合并后对所有用户生效
 - **角色权限**：`User.role`（`operator` / `admin`），登录响应含 `role`，前端 `isAdmin(user)` 控制 UI 可见性
 

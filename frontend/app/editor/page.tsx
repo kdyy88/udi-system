@@ -11,8 +11,9 @@ import { ElementToolbar } from "@/components/editor/ElementToolbar";
 import { PropertiesPanel } from "@/components/editor/PropertiesPanel";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useCreateTemplate } from "@/hooks/useLabelTemplates";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useSaveSystemTemplateOverride } from "@/hooks/useSystemTemplateOverrides";
-import { clearAuthUser, getAuthUser, isAdmin, type AuthUser } from "@/lib/auth";
+import { isAdmin } from "@/lib/auth";
 import { SYSTEM_TEMPLATES } from "@/lib/systemTemplates";
 import { api } from "@/lib/api";
 import type { CanvasDefinition } from "@/types/template";
@@ -20,12 +21,16 @@ import type { CanvasDefinition } from "@/types/template";
 export default function NewEditorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [templateName, setTemplateName] = useState("未命名模板");
+  const { authUser, checkingAuth } = useRequireAuth();
+  const seed = searchParams.get("seed");
+  const seededSystemTemplate = seed
+    ? SYSTEM_TEMPLATES.find((template) => template.id === seed) ?? null
+    : null;
+  const [templateName, setTemplateName] = useState(seededSystemTemplate?.name ?? "未命名模板");
   const [zoom, setZoom] = useState(1);
-  // When admin edits a system template directly, this holds the sys template ID
-  const [editingSysId, setEditingSysId] = useState<string | null>(null);
+  const editingSysId = authUser && seededSystemTemplate && isAdmin(authUser)
+    ? seededSystemTemplate.id
+    : null;
 
   const resetCanvas = useCanvasStore((s) => s.resetCanvas);
   const loadCanvas = useCanvasStore((s) => s.loadCanvas);
@@ -34,37 +39,22 @@ export default function NewEditorPage() {
   const saveOverride = useSaveSystemTemplateOverride(authUser?.user_id ?? 0);
 
   useEffect(() => {
-    const user = getAuthUser();
-    if (!user) { router.replace("/login"); return; }
-    setAuthUser(user);
-    setCheckingAuth(false);
+    if (!authUser) return;
 
-    // If ?seed=sys-xxx is provided, pre-load that system template
-    const seed = searchParams.get("seed");
-    if (seed) {
-      const sysTmpl = SYSTEM_TEMPLATES.find((t) => t.id === seed);
-      if (sysTmpl) {
-        setTemplateName(sysTmpl.name);
-        if (isAdmin(user)) {
-          setEditingSysId(seed);
-        }
-        // Fetch DB overrides so the editor loads the last-saved version, not the factory default
-        api
-          .get<{ value: Record<string, CanvasDefinition> }>("/api/v1/system/template-overrides")
-          .then((r) => {
-            const override = r.data?.value?.[seed];
-            loadCanvas(override ?? sysTmpl.canvas);
-          })
-          .catch(() => {
-            // If the fetch fails, fall back to factory default
-            loadCanvas(sysTmpl.canvas);
-          });
-        return;
-      }
+    if (seededSystemTemplate) {
+      api
+        .get<{ value: Record<string, CanvasDefinition> }>("/api/v1/system/template-overrides")
+        .then((r) => {
+          const override = r.data?.value?.[seededSystemTemplate.id];
+          loadCanvas(override ?? seededSystemTemplate.canvas);
+        })
+        .catch(() => {
+          loadCanvas(seededSystemTemplate.canvas);
+        });
+      return;
     }
     resetCanvas();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authUser, seededSystemTemplate, loadCanvas, resetCanvas]);
 
   if (checkingAuth || !authUser) {
     return <main className="p-6 text-sm text-muted-foreground">正在检查登录状态…</main>;
@@ -134,15 +124,6 @@ export default function NewEditorPage() {
           <span>{Math.round(zoom * 100)}%</span>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{authUser.username}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { clearAuthUser(); router.replace("/login"); }}
-          >
-            退出
-          </Button>
-
           {editingSysId ? (
             /* Admin editing a system template: primary = update original, secondary = save as copy */
             <>

@@ -20,7 +20,8 @@
 - [backend/app/main.py](backend/app/main.py)
   - 创建 FastAPI 应用（`lifespan` 管理启动/关闭）。
   - 挂载 CORS；注册总路由。
-  - 启动时运行 Alembic 建表 + 初始化默认用户。
+  - 启动时执行 SQLAlchemy `create_all()` 兜底建表 + 初始化默认用户。
+  - **正式 schema 演进仍以 Alembic 为准**。
   - 关闭时清理连接池（`engine.dispose()`）。
 - [backend/entrypoint.sh](backend/entrypoint.sh)
   - 容器启动入口：先执行 `alembic upgrade head`，再启动 Gunicorn（4 workers）。
@@ -36,14 +37,14 @@
 - [frontend/app/batch/page.tsx](frontend/app/batch/page.tsx)
   - 批量打码页：Excel 上传 → 解析预览 → **从模板库选取自定义模板**（`TemplateGallery mode="select"`）→ 所见即所得样式预览 → 保存后端 → SVG ZIP 下载（6 阶段状态机）。
 - [frontend/app/history/page.tsx](frontend/app/history/page.tsx)
-  - 历史台账页：页头 + `<HistoryTabs>`，与首页共享同一组件。
+  - 历史台账页：复用 `<PageHeader>` + `<HistoryTabs>`。
 - [frontend/app/history/batch/[id]/page.tsx](frontend/app/history/batch/[id]/page.tsx)
   - 批次详情页：分页展示批次内所有标签 + "重新下载 ZIP" 按钮。
 - [frontend/app/(auth)/login/page.tsx](frontend/app/(auth)/login/page.tsx)
   - 登录页。
 - [frontend/app/editor/page.tsx](frontend/app/editor/page.tsx)（v3.5 新增，v3.6 扩展）
   - 新建模板编辑器（`/editor`），zoom 滑块（0.3–2.0）。
-  - v3.6：支持 `?seed=sys-xxx` 预加载系统模板画布。管理员访问时进入直接编辑模式，顶栏呈现“更新系统模板”（主） + “另存为个人模板”（次）双按钒。
+  - v3.6：支持 `?seed=sys-xxx` 预加载系统模板画布。管理员访问时进入直接编辑模式，顶栏呈现“更新系统模板”（主） + “另存为个人模板”（次）双按钮。
 - [frontend/app/editor/[id]/page.tsx](frontend/app/editor/[id]/page.tsx)（v3.5 新增）
   - 编辑已有模板（`/editor/[id]`）：从 API 加载画布数据；保存调用 `useUpdateTemplate`。
 - [frontend/app/templates/page.tsx](frontend/app/templates/page.tsx)（v3.6 新增）
@@ -57,6 +58,8 @@
 
 - [backend/app/api/router.py](backend/app/api/router.py)
   - 聚合所有子路由（auth / labels / batches / templates）。
+- [backend/app/api/helpers.py](backend/app/api/helpers.py)
+  - 路由公共 helper：`log_request_timing()`、`get_user_or_404()`、`require_admin()`、`get_owned_record_or_404()`、`to_label_history_response()`。
 - [backend/app/api/auth.py](backend/app/api/auth.py)
   - 登录接口：用户名密码校验（async）；响应包含 `role` 字段。
 - [backend/app/api/system.py](backend/app/api/system.py)（v3.6 新增）
@@ -64,23 +67,25 @@
     - `GET/PUT /system/hidden-templates`：读取/更新被隐藏的系统模板 ID 列表。
     - `GET /system/template-overrides`：公开，返回所有画布覆写映射。
     - `PUT/DELETE /system/template-override/{sys_id}`：管理员保存覆写 / 恢复出厂默认。
-  - 所有写操作校验 `User.role == "admin"`（非管理员 → 403）。
+  - 所有写操作通过 `helpers.require_admin()` 校验管理员身份（非管理员 → 403）。
 - [backend/app/api/labels.py](backend/app/api/labels.py)
   - 生成（保存元数据，同时自动创建 `source="form"` 的单条 LabelBatch）、历史查询（cursor 分页）、历史明细、删除。
+  - 复用 `helpers.py` 处理 user 校验、owned-record 校验和 `LabelHistoryResponse` 序列化。
 - [backend/app/api/batches.py](backend/app/api/batches.py)
-  - 批量接口：`POST /generate`（单事务建批+批量写 label_history）、`GET /batches`（游标分页列表）、`GET /batches/{id}`（详情+标签分页）、`DELETE /batches/{id}`（级联删除）。
+  - 批量接口：`POST /generate`（单事务建批+批量写 label_history，并保存 `template_definition` 快照）、`GET /batches`（游标分页列表）、`GET /batches/{id}`（详情+标签分页）、`DELETE /batches/{id}`（级联删除）。
+  - v3.6.1：批次详情分页修复为升序读取 + `id > cursor`，与 ZIP 导出顺序一致。
 - [backend/app/api/templates.py](backend/app/api/templates.py)（v3.5 新增）
   - 模板 CRUD：`GET/POST /api/v1/templates?user_id=…`、`GET/PUT/DELETE /api/v1/templates/{id}?user_id=…`。
-  - 所有操作通过 `user_id` query 参数校验归属（非本人 → 403）。
+  - 所有操作通过 `helpers.get_owned_record_or_404()` 校验归属（非本人 → 403）。
 
 ### 数据模型层（DB）
 
 - [backend/app/db/session.py](backend/app/db/session.py)
   - async engine（asyncpg / PostgreSQL）、`AsyncSessionLocal`、`get_db()` 依赖注入。
 - [backend/app/db/models.py](backend/app/db/models.py)
-  - 表结构：`User`（含 `role` 列）、`LabelBatch`、`LabelHistory`（含 `batch_id` FK + CASCADE）、`LabelTemplate`（v3.5，含 `canvas_json JSONB`）、`SystemConfig`（v3.6，`key VARCHAR(100) UNIQUE` + `value JSONB`）。
+  - 表结构：`User`（含 `role` 列）、`LabelBatch`（含 `template_definition JSONB` 快照）、`LabelHistory`（含 `batch_id` FK + CASCADE）、`LabelTemplate`（v3.5，含 `canvas_json JSONB`）、`SystemConfig`（v3.6，`key VARCHAR(100) UNIQUE` + `value JSONB`）。
 - [backend/alembic/](backend/alembic/)
-  - `0001` 初始全量建表；`0002` 新增 `label_batch`；`0003` 创建 `label_template`（v3.5）；`0004` 创建 `system_config` 并种入初始行（v3.6）。
+  - `0001` 初始全量建表；`0002` 新增 `label_batch`；`0003` 创建 `label_template`（v3.5）；`0004` 创建 `system_config` 并种入初始行（v3.6）；`0005` 为 `label_batch` 增加 `template_definition` 快照（v3.6.1）。
 
 ### 数据校验层（Schema）
 
@@ -130,7 +135,11 @@
   - 基于 TanStack Query 的批次列表管理（cursor 分页）；供历史页“批次总览” Tab 使用。
 - [frontend/hooks/useBatchUpload.ts](frontend/hooks/useBatchUpload.ts)
   - 批量上传状态机（6 阶段）：`idle → parsing → validated → saving → generating → done | error`。
-  - 调用 `parseExcelFile` 解析、`api.post` 保存、`exportBatchToZip` 生成 SVG ZIP。- [frontend/hooks/useLabelTemplates.ts](frontend/hooks/useLabelTemplates.ts)（v3.5 新增）
+  - 调用 `parseExcelFile` 解析、`api.post` 保存、`exportBatchToZip` 生成 SVG ZIP。
+  - v3.6.1：保存时一并提交 `template_definition`，供批次历史重下载复用原模板。
+- [frontend/hooks/useRequireAuth.ts](frontend/hooks/useRequireAuth.ts)（v3.6.1 新增）
+  - 页面级认证守卫：读取本地登录态、未登录跳转 `/login`、统一 `logout()`。
+- [frontend/hooks/useLabelTemplates.ts](frontend/hooks/useLabelTemplates.ts)（v3.5 新增）
   - 基于 TanStack Query 的模板 CRUD：`useListTemplates`、`useGetTemplate`、`useCreateTemplate`、`useUpdateTemplate`、`useDeleteTemplate`。
 - [frontend/hooks/useHiddenSystemTemplates.ts](frontend/hooks/useHiddenSystemTemplates.ts)（v3.6 新增）
   - `useHiddenSystemTemplates()` 查询隐藏列表；`useSetHiddenSystemTemplates(userId)` Mutation。
@@ -142,6 +151,8 @@
 - [frontend/components/labels/HistoryTabs.tsx](frontend/components/labels/HistoryTabs.tsx)
   - 自包含双 Tab 历史组件：批次总览（`BatchListTable` + `useLabelBatches`）| 全部明细（`DataTable` + `useLabelHistory` + 筛选）。
   - 内含 `PreviewDialog`；同时挂载于首页（表单下方）和历史台账页，两处完全一致。
+- [frontend/components/labels/PageHeader.tsx](frontend/components/labels/PageHeader.tsx)
+  - 复用页头组件：标题 / 说明 / 当前用户 / 退出登录。
 - [frontend/components/labels/LabelForm.tsx](frontend/components/labels/LabelForm.tsx)
   - 标签录入表单；提交行含"批量上传"快跳链接（`href="/batch"`）与"生成"按钮并排。
 - [frontend/components/labels/PreviewDialog.tsx](frontend/components/labels/PreviewDialog.tsx)
@@ -192,7 +203,7 @@
   - GS1 AI 字符串工具：`findAiText(hri, ai)`、`findAiValue(hri, ai)`、`escapeXml(s)`。
   - 被 `svgTemplates.ts`、`batchExporter.ts`、`PreviewTemplateCanvas.tsx` 等共同引用。
 - [frontend/lib/excelParser.ts](frontend/lib/excelParser.ts)
-  - SheetJS 解析 Excel 文件；自动检测表头（中英文均可）；每行客户端校验 GTIN-14 Mod-10；最多 500 行。
+  - SheetJS 解析 Excel 文件；自动检测表头（中英文均可）；每行客户端校验 GTIN-14 Mod-10 + 至少一个 PI；最多 500 行。
 - [frontend/lib/svgTemplates.ts](frontend/lib/svgTemplates.ts)（v3.5 重写，v3.6 修复）
   - 旧三函数（`renderCompactSvg` / `renderDualSvg` / `renderDetailSvg`）已删除。
   - 新导出 `renderCustomSvg(input, canvas: CanvasDefinition): string`：遍历 `canvas.elements`，按类型分发渲染（barcode → bwip-js SVG；text → 解析 fieldBinding 填入 AI 值；rect → `<rect>`）。
@@ -203,7 +214,8 @@
 - [frontend/lib/api.ts](frontend/lib/api.ts)
   - Axios 实例。
 - [frontend/lib/auth.ts](frontend/lib/auth.ts)
-  - 登录态存取（localStorage）；`AuthUser` 含 `role: string`；`isAdmin(user)` 工具函数。
+  - 登录态存取（localStorage）；`isAdmin(user)` 工具函数。
+  - `AuthUser` 类型已收敛到 `types/udi.ts`，此处不再重复定义。
 - [frontend/lib/systemTemplates.ts](frontend/lib/systemTemplates.ts)（v3.6 新增）
   - 三套硬编码出厂系统模板（紧凑型/标准型/双码型），ID 前缀 `"sys-"`。
   - `applyOverrides(overrides)`：将 DB 覆写合并至硬编码默认，返回新数组，不改变原始常量。
@@ -211,7 +223,7 @@
 - [frontend/lib/preview-templates.ts](frontend/lib/preview-templates.ts)（v3.5 废弃为空壳）
   - 已缩减为 `export type TemplateKey = never;`，仅保留兼容性存根，勿再引用。
 - [frontend/features/labels/api/routes.ts](frontend/features/labels/api/routes.ts)
-  - API 路径常量：`LABELS_API_ROUTES` + `BATCHES_API_ROUTES` + `TEMPLATE_ROUTES`（v3.5 新增）。
+  - API 路径常量：`LABELS_API_ROUTES` + `BATCHES_API_ROUTES`。
 - [frontend/types/udi.ts](frontend/types/udi.ts)
   - 前端类型定义（`LabelHistoryItem` 含 `batch_id` 可空字段）。
 - [frontend/types/batch.ts](frontend/types/batch.ts)
@@ -289,7 +301,7 @@
 用户点击"保存并生成"
   → useBatchUpload.startGenerate(template)
       → POST /api/v1/batches/generate                   [单事务]
-          → batches.py: 创建 LabelBatch + 批量写 LabelHistory
+      → batches.py: 创建 LabelBatch（含 template_definition 快照）+ 批量写 LabelHistory
               → gs1_engine.py 权威重算 HRI（不信任客户端）
       → lib/batchExporter.ts: exportBatchToZip()        [客户端, 纯 SVG]
           → fetchAllBatchLabels() 分页拉取权威 HRI
@@ -311,7 +323,7 @@
 批次详情页
   → GET /api/v1/batches/{id}?user_id=...
   → 展示分页标签表格
-  → 点击"重新下载 ZIP" → exportBatchToZip()  [同批量打码链路 E]
+  → 点击"重新下载 ZIP" → 优先使用批次保存时的 `template_definition` → exportBatchToZip()  [同批量打码链路 E]
 ```
 
 ### G. 模板编辑器链路（v3.5 新增）

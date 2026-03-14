@@ -1,12 +1,8 @@
 "use client";
 
-export const AUTH_STORAGE_KEY = "gs1_udi_auth_user";
+import type { AuthUser } from "@/types/udi";
 
-export type AuthUser = {
-  user_id: number;
-  username: string;
-  role: string;
-};
+export const AUTH_STORAGE_KEY = "gs1_udi_auth_user";
 
 export function isAdmin(user: AuthUser | null | undefined): boolean {
   return user?.role === "admin";

@@ -13,16 +13,8 @@ import { api } from "@/lib/api";
 import { parseExcelFile } from "@/lib/excelParser";
 import { exportBatchToZip, fetchAllBatchLabels } from "@/lib/batchExporter";
 import { BATCHES_API_ROUTES } from "@/features/labels/api/routes";
-import type { GenerateProgress, BatchPhase, ParsedRow } from "@/types/batch";
+import type { BatchCreateResponse, GenerateProgress, BatchPhase, ParsedRow } from "@/types/batch";
 import type { CanvasDefinition } from "@/types/template";
-
-type BatchCreateResponse = {
-  batch_id: number;
-  name: string;
-  source: string;
-  total_count: number;
-  created_at: string;
-};
 
 type State = {
   phase: BatchPhase;
@@ -83,6 +75,7 @@ export function useBatchUpload(userId: number) {
           user_id: userId,
           name: batchName,
           source: "excel",
+          template_definition: templateDefinition,
           items: validRows.map((r) => ({
             di: r.di,
             lot: r.lot,

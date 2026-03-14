@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useState, useCallback } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { saveAs } from "file-saver";
 import { ArrowLeft, Download } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
-import { getAuthUser, type AuthUser } from "@/lib/auth";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { api } from "@/lib/api";
 import { BATCHES_API_ROUTES } from "@/features/labels/api/routes";
 import { exportBatchToZip, fetchAllBatchLabels } from "@/lib/batchExporter";
@@ -71,25 +71,12 @@ function LabelTable({ labels }: { labels: LabelHistoryItem[] }) {
 }
 
 export default function BatchDetailPage() {
-  const router = useRouter();
   const params = useParams<{ id: string }>();
   const batchId = parseInt(params.id ?? "0", 10);
 
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const { authUser, checkingAuth } = useRequireAuth();
   const [cursor, setCursor] = useState<number | null>(null);
   const [downloading, setDownloading] = useState(false);
-
-  useEffect(() => {
-    const user = getAuthUser();
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
-    setAuthUser(user);
-    setCheckingAuth(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const { data, isLoading } = useQuery({
     queryKey: ["batch-detail", batchId, authUser?.user_id, cursor],
@@ -101,7 +88,6 @@ export default function BatchDetailPage() {
   const handleReDownload = useCallback(async () => {
     if (!authUser || !data) return;
     setDownloading(true);
-    // Re-download uses an empty canvas definition — just DataMatrix
     const fallbackCanvas: CanvasDefinition = {
       widthPx: 378,
       heightPx: 227,
@@ -113,7 +99,7 @@ export default function BatchDetailPage() {
         batchId,
         batchName: data.name,
         labels,
-        templateDefinition: fallbackCanvas,
+        templateDefinition: data.template_definition ?? fallbackCanvas,
         onProgress: () => {},
       });
       saveAs(blob, `UDI_${data.name}_${batchId}.zip`);

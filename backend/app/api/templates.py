@@ -3,21 +3,17 @@ from time import perf_counter
 from typing import Annotated
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.helpers import get_owned_record_or_404, log_request_timing
 from app.db.models import LabelTemplate
 from app.db.session import get_db
 from app.schemas.template import TemplateCreate, TemplateListResponse, TemplateRead, TemplateUpdate
 
 router = APIRouter(prefix="/templates")
 logger = logging.getLogger(__name__)
-
-
-def _log_timing(endpoint: str, started_at: float, **extra: object) -> None:
-    elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
-    logger.info("%s finished in %sms | %s", endpoint, elapsed_ms, extra)
 
 
 @router.get("", response_model=TemplateListResponse)
@@ -40,7 +36,7 @@ async def list_templates(
     result = await db.execute(stmt)
     rows = result.scalars().all()
 
-    _log_timing("GET /templates", started_at, user_id=user_id, count=len(rows))
+    log_request_timing(logger, "GET /templates", started_at, user_id=user_id, count=len(rows))
     return TemplateListResponse(
         total=total,
         items=[TemplateRead.model_validate(r) for r in rows],
@@ -69,7 +65,7 @@ async def create_template(
     await db.commit()
     await db.refresh(tmpl)
 
-    _log_timing("POST /templates", started_at, id=tmpl.id)
+    log_request_timing(logger, "POST /templates", started_at, id=tmpl.id)
     return TemplateRead.model_validate(tmpl)
 
 
@@ -108,7 +104,7 @@ async def update_template(
     await db.commit()
     await db.refresh(tmpl)
 
-    _log_timing("PUT /templates/{id}", started_at, id=template_id)
+    log_request_timing(logger, "PUT /templates/{id}", started_at, id=template_id)
     return TemplateRead.model_validate(tmpl)
 
 
@@ -126,10 +122,11 @@ async def delete_template(
 # ─── helper ───────────────────────────────────────────────────────────────────
 
 async def _get_owned(template_id: int, user_id: int, db: AsyncSession) -> LabelTemplate:
-    result = await db.execute(select(LabelTemplate).where(LabelTemplate.id == template_id))
-    tmpl = result.scalar_one_or_none()
-    if tmpl is None:
-        raise HTTPException(status_code=404, detail="template not found")
-    if tmpl.user_id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="access denied")
-    return tmpl
+    return await get_owned_record_or_404(
+        db=db,
+        model=LabelTemplate,
+        record_id=template_id,
+        user_id=user_id,
+        object_name="template",
+        forbidden_detail="access denied",
+    )

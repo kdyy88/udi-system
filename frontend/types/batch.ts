@@ -16,6 +16,15 @@ export type LabelBatchSummary = {
   source: BatchSource;
   total_count: number;
   created_at: string;
+  template_definition: CanvasDefinition | null;
+};
+
+export type BatchCreateResponse = {
+  batch_id: number;
+  name: string;
+  source: BatchSource;
+  total_count: number;
+  created_at: string;
 };
 
 export type LabelBatchListResponse = {

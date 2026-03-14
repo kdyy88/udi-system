@@ -3,36 +3,32 @@ import logging
 from time import perf_counter
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import LabelBatch, LabelHistory, User
+from app.api.helpers import (
+    get_owned_record_or_404,
+    get_user_or_404,
+    log_request_timing,
+    to_label_history_response,
+)
+from app.db.models import LabelBatch, LabelHistory
 from app.db.session import get_db
 from app.schemas.batch import (
     BatchCreateRequest,
     BatchCreateResponse,
+    BatchTemplateDefinition,
     LabelBatchDetailResponse,
     LabelBatchListResponse,
     LabelBatchSummary,
 )
-from app.schemas.label import LabelHistoryResponse
 from app.services.gs1_engine import build_gs1_element_string, build_hri_string
 
 router = APIRouter(prefix="/batches")
 logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 20
-
-
-def _log_timing(endpoint: str, started_at: float, **extra: object) -> None:
-    elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
-    logger.info("%s finished in %sms%s", endpoint, elapsed_ms,
-                f" | {extra}" if extra else "")
-
-
-def _escaped_gs1(gs1_element_string: str) -> str:
-    return gs1_element_string.encode("unicode_escape").decode("utf-8")
 
 
 @router.post("/generate", response_model=BatchCreateResponse, status_code=201)
@@ -47,9 +43,7 @@ async def create_batch(
     """
     started_at = perf_counter()
 
-    user_result = await db.execute(select(User).where(User.id == payload.user_id))
-    if user_result.scalar_one_or_none() is None:
-        raise HTTPException(status_code=404, detail="user_id not found")
+    await get_user_or_404(payload.user_id, db)
 
     # Validate every row with the authoritative backend engine before touching DB
     gs1_results: list[tuple[str, str]] = []
@@ -82,6 +76,7 @@ async def create_batch(
         name=payload.name,
         source=payload.source,
         total_count=len(payload.items),
+        template_definition=payload.template_definition.model_dump(),
         created_at=datetime.now(UTC),
     )
     db.add(batch)
@@ -104,7 +99,8 @@ async def create_batch(
     ])
     await db.commit()
 
-    _log_timing(
+    log_request_timing(
+        logger,
         "POST /batches/generate",
         started_at,
         batch_id=batch.id,
@@ -149,7 +145,7 @@ async def list_batches(
 
     next_cursor = batches[-1].id if len(batches) == page_size else None
 
-    _log_timing("GET /batches", started_at, user_id=user_id, rows=len(batches))
+    log_request_timing(logger, "GET /batches", started_at, user_id=user_id, rows=len(batches))
     return LabelBatchListResponse(
         total=total,
         next_cursor=next_cursor,
@@ -161,6 +157,11 @@ async def list_batches(
                 source=b.source,
                 total_count=b.total_count,
                 created_at=b.created_at,
+                template_definition=(
+                    BatchTemplateDefinition.model_validate(b.template_definition)
+                    if b.template_definition is not None
+                    else None
+                ),
             )
             for b in batches
         ],
@@ -178,17 +179,18 @@ async def get_batch_detail(
     """Batch detail with paginated label list. Used by the detail page and the download worker."""
     started_at = perf_counter()
 
-    batch_result = await db.execute(select(LabelBatch).where(LabelBatch.id == batch_id))
-    batch = batch_result.scalar_one_or_none()
-    if batch is None:
-        raise HTTPException(status_code=404, detail="batch not found")
-    if batch.user_id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Forbidden")
+    batch = await get_owned_record_or_404(
+        db=db,
+        model=LabelBatch,
+        record_id=batch_id,
+        user_id=user_id,
+        object_name="batch",
+        forbidden_detail="Forbidden",
+    )
 
     data_filter = [LabelHistory.batch_id == batch_id]
     if cursor is not None:
-        data_filter.append(LabelHistory.id < cursor)
+        data_filter.append(LabelHistory.id > cursor)
 
     stmt = (
         select(LabelHistory)
@@ -201,7 +203,7 @@ async def get_batch_detail(
 
     next_cursor = records[-1].id if len(records) == page_size else None
 
-    _log_timing("GET /batches/{id}", started_at, batch_id=batch_id, rows=len(records))
+    log_request_timing(logger, "GET /batches/{id}", started_at, batch_id=batch_id, rows=len(records))
     return LabelBatchDetailResponse(
         id=batch.id,
         user_id=batch.user_id,
@@ -209,24 +211,13 @@ async def get_batch_detail(
         source=batch.source,
         total_count=batch.total_count,
         created_at=batch.created_at,
+        template_definition=(
+            BatchTemplateDefinition.model_validate(batch.template_definition)
+            if batch.template_definition is not None
+            else None
+        ),
         next_cursor=next_cursor,
-        labels=[
-            LabelHistoryResponse(
-                id=r.id,
-                user_id=r.user_id,
-                batch_id=r.batch_id,
-                gtin=r.gtin,
-                batch_no=r.batch_no,
-                expiry_date=r.expiry_date,
-                serial_no=r.serial_no,
-                production_date=r.production_date,
-                remarks=r.remarks,
-                full_string=r.full_string,
-                hri=r.hri,
-                created_at=r.created_at,
-            )
-            for r in records
-        ],
+        labels=[to_label_history_response(r) for r in records],
     )
 
 
@@ -240,13 +231,14 @@ async def delete_batch(
     Delete a batch and all its label_history records (CASCADE via FK).
     Ownership is verified before deletion.
     """
-    batch_result = await db.execute(select(LabelBatch).where(LabelBatch.id == batch_id))
-    batch = batch_result.scalar_one_or_none()
-    if batch is None:
-        raise HTTPException(status_code=404, detail="batch not found")
-    if batch.user_id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Forbidden")
+    batch = await get_owned_record_or_404(
+        db=db,
+        model=LabelBatch,
+        record_id=batch_id,
+        user_id=user_id,
+        object_name="batch",
+        forbidden_detail="Forbidden",
+    )
 
     await db.delete(batch)
     await db.commit()

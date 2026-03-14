@@ -104,6 +104,10 @@ describe("buildHri", () => {
     const hri = buildHri({ di: "09506000134352", expiry: "290228" });
     expect(hri).toContain("(17)290228");
   });
+
+  it("throws when all PI values are absent", () => {
+    expect(() => buildHri({ di: "09506000134352" })).toThrow(/At least one PI value is required/);
+  });
 });
 
 // ─── buildGs1ElementString ───────────────────────────────────────────────────
@@ -139,10 +143,16 @@ describe("buildGs1ElementString", () => {
     expect(val).toBe("010950600013435221S001");
   });
 
-  it("returns only DI when all PI values are absent (no validation on frontend side)", () => {
-    // Frontend does not throw – it builds what it has (DI only valid case)
-    const val = buildGs1ElementString({ di: "09506000134352" });
-    expect(val).toBe("0109506000134352");
+  it("throws when all PI values are absent", () => {
+    expect(() => buildGs1ElementString({ di: "09506000134352" })).toThrow(
+      /At least one PI value is required/
+    );
+  });
+
+  it("throws on invalid GTIN check digit", () => {
+    expect(() => buildGs1ElementString({ di: "09506000134353", lot: "LOT001" })).toThrow(
+      /Invalid GTIN-14 check digit/
+    );
   });
 });
 

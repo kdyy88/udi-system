@@ -1,13 +1,20 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Pencil, Trash2, Plus, EyeOff, RotateCcw } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { useListTemplates, useDeleteTemplate } from "@/hooks/useLabelTemplates";
 import { useHiddenSystemTemplates, useSetHiddenSystemTemplates } from "@/hooks/useHiddenSystemTemplates";
 import { useSystemTemplateOverrides, useDeleteSystemTemplateOverride } from "@/hooks/useSystemTemplateOverrides";
 import { recordToDefinition, type CanvasDefinition } from "@/types/template";
-import { applyOverrides, SYSTEM_TEMPLATES } from "@/lib/systemTemplates";
+import { applyOverrides } from "@/lib/systemTemplates";
+import { cn } from "@/lib/utils";
 
 type Mode = "manage" | "select";
 
@@ -18,10 +25,20 @@ type Props = {
   isAdmin?: boolean;
   /** Selected template ID — "sys-xxx" for system templates, numeric string for user templates */
   selectedId?: string | null;
-  onSelect?: (def: CanvasDefinition, id: string) => void;
+  onSelect?: (def: CanvasDefinition, id: string, name: string) => void;
+  canPreview?: boolean;
+  onPreview?: (def: CanvasDefinition, name: string) => void;
 };
 
-export function TemplateGallery({ userId, mode, isAdmin = false, selectedId, onSelect }: Props) {
+export function TemplateGallery({
+  userId,
+  mode,
+  isAdmin = false,
+  selectedId,
+  onSelect,
+  canPreview = false,
+  onPreview,
+}: Props) {
   const { data, isLoading } = useListTemplates(userId);
   const deleteMut = useDeleteTemplate();
 
@@ -35,6 +52,9 @@ export function TemplateGallery({ userId, mode, isAdmin = false, selectedId, onS
   const effectiveSystemTemplates = applyOverrides(overrides);
 
   const userTemplates = data?.items ?? [];
+  const selectableMode = mode === "select";
+  const [manualSystemOpen, setManualSystemOpen] = useState(selectableMode);
+  const [manualUserOpen, setManualUserOpen] = useState(false);
 
   /** Toggle a system template's visibility (admin only). */
   function toggleHide(id: string) {
@@ -48,14 +68,23 @@ export function TemplateGallery({ userId, mode, isAdmin = false, selectedId, onS
   const visibleSystemTemplates = isAdmin
     ? effectiveSystemTemplates
     : effectiveSystemTemplates.filter((t) => !hiddenIds.includes(t.id));
+  const selectedSystemTemplate = Boolean(selectedId?.startsWith("sys-"));
+  const selectedUserTemplate = Boolean(selectedId && !selectedId.startsWith("sys-"));
+  const systemOpen = selectedSystemTemplate || manualSystemOpen;
+  const userOpen = selectedUserTemplate || manualUserOpen;
 
-  return (
-    <div className="space-y-5">
-      {/* ── System templates ───────────────────────────────────────────── */}
-      <div className="space-y-2">
+  const systemTemplatesSection = (
+    <div className="space-y-2">
+      {!selectableMode && (
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           系统默认
         </p>
+      )}
+      {visibleSystemTemplates.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          当前没有可用的系统模板
+        </div>
+      ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {visibleSystemTemplates.map((tmpl) => {
             const isSelected = selectedId === tmpl.id;
@@ -72,7 +101,7 @@ export function TemplateGallery({ userId, mode, isAdmin = false, selectedId, onS
                     ? "border-dashed border-muted-foreground/40 opacity-50"
                     : "border-border hover:border-primary/50"
                 }`}
-                onClick={() => mode === "select" && onSelect?.(tmpl.canvas, tmpl.id)}
+                onClick={() => mode === "select" && onSelect?.(tmpl.canvas, tmpl.id, tmpl.name)}
               >
                 <div className="mb-2 flex h-16 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
                   {Math.round(tmpl.canvas.widthPx / 3.78)}×{Math.round(tmpl.canvas.heightPx / 3.78)} mm
@@ -80,10 +109,23 @@ export function TemplateGallery({ userId, mode, isAdmin = false, selectedId, onS
                 <p className="truncate text-xs font-medium">{tmpl.name}</p>
                 <p className="text-xs text-muted-foreground">{tmpl.description}</p>
 
-                {/* Admin controls for system templates */}
+                {selectableMode && canPreview && onPreview && (
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="absolute right-2 top-2 h-7 w-7 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                    title="预览模板"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPreview(tmpl.canvas, tmpl.name);
+                    }}
+                  >
+                    <Eye className="size-3.5" />
+                  </Button>
+                )}
+
                 {mode === "manage" && isAdmin && (
                   <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    {/* Edit: open editor seeded with this template */}
                     <Link
                       href={`/editor?seed=${tmpl.id}`}
                       className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
@@ -92,7 +134,6 @@ export function TemplateGallery({ userId, mode, isAdmin = false, selectedId, onS
                     >
                       <Pencil className="size-3" />
                     </Link>
-                    {/* Reset override to factory default (only shown when override exists) */}
                     {overrides[tmpl.id] && (
                       <Button
                         size="icon"
@@ -109,7 +150,6 @@ export function TemplateGallery({ userId, mode, isAdmin = false, selectedId, onS
                         <RotateCcw className="size-3" />
                       </Button>
                     )}
-                    {/* Hide/show toggle */}
                     <Button
                       size="icon"
                       variant="ghost"
@@ -132,10 +172,13 @@ export function TemplateGallery({ userId, mode, isAdmin = false, selectedId, onS
             );
           })}
         </div>
-      </div>
+      )}
+    </div>
+  );
 
-      {/* ── User templates ─────────────────────────────────────────────── */}
-      <div className="space-y-2">
+  const userTemplatesSection = (
+    <div className="space-y-2">
+      {!selectableMode && (
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             我的模板
@@ -150,68 +193,124 @@ export function TemplateGallery({ userId, mode, isAdmin = false, selectedId, onS
             </Link>
           )}
         </div>
+      )}
 
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">加载中…</p>
-        ) : userTemplates.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            {mode === "manage"
-              ? "暂无自定义模板，点击「新建模板」开始设计"
-              : "暂无自定义模板"}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {userTemplates.map((tmpl) => {
-              const id = String(tmpl.id);
-              const isSelected = selectedId === id;
-              return (
-                <div
-                  key={tmpl.id}
-                  className={`group relative cursor-pointer rounded-lg border-2 p-3 transition-colors ${
-                    isSelected
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50"
-                  }`}
-                  onClick={() => {
-                    if (mode === "select") onSelect?.(recordToDefinition(tmpl), id);
-                  }}
-                >
-                  <div className="mb-2 flex h-16 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-                    {Math.round(tmpl.canvas_width_px / 3.78)}×{Math.round(tmpl.canvas_height_px / 3.78)} mm
-                  </div>
-                  <p className="truncate text-xs font-medium">{tmpl.name}</p>
-                  <p className="text-xs text-muted-foreground">{tmpl.canvas_json.length} 个元素</p>
-
-                  {mode === "manage" && (
-                    <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Link
-                        href={`/editor/${tmpl.id}`}
-                        className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Pencil className="size-3" />
-                      </Link>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-6 w-6 text-destructive hover:bg-destructive/10"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm(`删除模板「${tmpl.name}」？此操作不可恢复`)) {
-                            deleteMut.mutate({ id: tmpl.id, userId });
-                          }
-                        }}
-                      >
-                        <Trash2 className="size-3" />
-                      </Button>
-                    </div>
-                  )}
+      {isLoading ? (
+        <p className="text-sm text-muted-foreground">加载中…</p>
+      ) : userTemplates.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          {mode === "manage"
+            ? "暂无自定义模板，点击「新建模板」开始设计"
+            : "暂无自定义模板"}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {userTemplates.map((tmpl) => {
+            const id = String(tmpl.id);
+            const isSelected = selectedId === id;
+            return (
+              <div
+                key={tmpl.id}
+                className={`group relative cursor-pointer rounded-lg border-2 p-3 transition-colors ${
+                  isSelected
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/50"
+                }`}
+                onClick={() => {
+                  if (mode === "select") onSelect?.(recordToDefinition(tmpl), id, tmpl.name);
+                }}
+              >
+                <div className="mb-2 flex h-16 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+                  {Math.round(tmpl.canvas_width_px / 3.78)}×{Math.round(tmpl.canvas_height_px / 3.78)} mm
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <p className="truncate text-xs font-medium">{tmpl.name}</p>
+                <p className="text-xs text-muted-foreground">{tmpl.canvas_json.length} 个元素</p>
+
+                {selectableMode && canPreview && onPreview && (
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="absolute right-2 top-2 h-7 w-7 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                    title="预览模板"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPreview(recordToDefinition(tmpl), tmpl.name);
+                    }}
+                  >
+                    <Eye className="size-3.5" />
+                  </Button>
+                )}
+
+                {mode === "manage" && (
+                  <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Link
+                      href={`/editor/${tmpl.id}`}
+                      className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Pencil className="size-3" />
+                    </Link>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`删除模板「${tmpl.name}」？此操作不可恢复`)) {
+                          deleteMut.mutate({ id: tmpl.id, userId });
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-3" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  if (!selectableMode) {
+    return (
+      <div className="space-y-5">
+        {systemTemplatesSection}
+        {userTemplatesSection}
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Collapsible open={systemOpen} onOpenChange={setManualSystemOpen} className="rounded-xl border bg-background p-4">
+        <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 text-left">
+          <div>
+            <p className="text-sm font-medium">系统默认</p>
+            <p className="text-xs text-muted-foreground">{visibleSystemTemplates.length} 个可用模板</p>
+          </div>
+          <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", systemOpen && "rotate-180")} />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          {systemTemplatesSection}
+        </CollapsibleContent>
+      </Collapsible>
+
+      <Collapsible open={userOpen} onOpenChange={setManualUserOpen} className="rounded-xl border bg-background p-4">
+        <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 text-left">
+          <div>
+            <p className="text-sm font-medium">我的模板</p>
+            <p className="text-xs text-muted-foreground">
+              {isLoading ? "正在加载模板…" : `${userTemplates.length} 个自定义模板`}
+            </p>
+          </div>
+          <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", userOpen && "rotate-180")} />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          {userTemplatesSection}
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

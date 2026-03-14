@@ -106,6 +106,18 @@ function validateGtin(gtin: string): string | null {
   return null;
 }
 
+function validatePiPresence(raw: {
+  lot?: string | null;
+  expiry?: string | null;
+  serial?: string | null;
+  production_date?: string | null;
+}): string | null {
+  if (raw.lot || raw.expiry || raw.serial || raw.production_date) {
+    return null;
+  }
+  return "至少需要填写一个 PI：批次号、有效期、序列号或生产日期";
+}
+
 export async function parseExcelFile(file: File): Promise<ParsedRow[]> {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array", cellText: true, cellDates: false });
@@ -142,7 +154,7 @@ export async function parseExcelFile(file: File): Promise<ParsedRow[]> {
     const di = raw.di ?? "";
     if (!di) continue; // skip empty rows
 
-    const validationError = validateGtin(di);
+    const validationError = validateGtin(di) ?? validatePiPresence(raw);
 
     rows.push({
       rowIndex: r,

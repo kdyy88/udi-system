@@ -3,31 +3,28 @@ import logging
 from time import perf_counter
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import LabelBatch, LabelHistory, User
+from app.api.helpers import (
+    get_owned_record_or_404,
+    get_user_or_404,
+    log_request_timing,
+    to_label_history_response,
+)
+from app.db.models import LabelBatch, LabelHistory
 from app.db.session import get_db
 from app.schemas.label import (
     LabelCreateRequest,
     LabelGenerateResponse,
     LabelHistoryDetailResponse,
     LabelHistoryListResponse,
-    LabelHistoryResponse,
 )
 from app.services.gs1_engine import build_gs1_element_string, build_hri_string
 
 router = APIRouter(prefix="/labels")
 logger = logging.getLogger(__name__)
-
-
-def _log_timing(endpoint: str, started_at: float, **extra: object) -> None:
-    elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
-    if extra:
-        logger.info("%s finished in %sms | %s", endpoint, elapsed_ms, extra)
-        return
-    logger.info("%s finished in %sms", endpoint, elapsed_ms)
 
 
 def _build_gs1_and_hri(payload) -> tuple[str, str]:
@@ -68,10 +65,7 @@ async def generate_label(
     """Save UDI metadata to history. Called only when user explicitly exports a label."""
     started_at = perf_counter()
 
-    user_result = await db.execute(select(User).where(User.id == payload.user_id))
-    user = user_result.scalar_one_or_none()
-    if user is None:
-        raise HTTPException(status_code=404, detail="user_id not found")
+    await get_user_or_404(payload.user_id, db)
 
     try:
         gs1_element_string, hri = _build_gs1_and_hri(payload)
@@ -105,7 +99,8 @@ async def generate_label(
     await db.commit()
     await db.refresh(history)
 
-    _log_timing(
+    log_request_timing(
+        logger,
         "POST /labels/generate",
         started_at,
         history_id=history.id,
@@ -164,28 +159,13 @@ async def list_label_history(
     records_result = await db.execute(stmt)
     records = records_result.scalars().all()
 
-    items = [
-        LabelHistoryResponse(
-            id=row.id,
-            user_id=row.user_id,
-            batch_id=row.batch_id,
-            gtin=row.gtin,
-            batch_no=row.batch_no,
-            expiry_date=row.expiry_date,
-            serial_no=row.serial_no,
-            production_date=row.production_date,
-            remarks=row.remarks,
-            full_string=row.full_string,
-            hri=row.hri,
-            created_at=row.created_at,
-        )
-        for row in records
-    ]
+    items = [to_label_history_response(row) for row in records]
 
     # next_cursor = smallest id in this page → used as cursor for the next page
     next_cursor = records[-1].id if len(records) == page_size else None
 
-    _log_timing(
+    log_request_timing(
+        logger,
         "GET /labels/history",
         started_at,
         user_id=user_id,
@@ -204,34 +184,18 @@ async def get_label_history_detail(
 ) -> LabelHistoryDetailResponse:
     """Return history record metadata. Barcode rendering is handled client-side via bwip-js."""
     started_at = perf_counter()
-    result = await db.execute(
-        select(LabelHistory).where(LabelHistory.id == history_id)
+    row = await get_owned_record_or_404(
+        db=db,
+        model=LabelHistory,
+        record_id=history_id,
+        user_id=user_id,
+        object_name="history record",
+        forbidden_detail="You do not have permission to view this record",
     )
-    row = result.scalar_one_or_none()
 
-    if row is None:
-        raise HTTPException(status_code=404, detail="history record not found")
-
-    if row.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to view this record",
-        )
-
-    _log_timing("GET /labels/history/{history_id}", started_at, history_id=history_id)
+    log_request_timing(logger, "GET /labels/history/{history_id}", started_at, history_id=history_id)
     return LabelHistoryDetailResponse(
-        id=row.id,
-        user_id=row.user_id,
-        batch_id=row.batch_id,
-        gtin=row.gtin,
-        batch_no=row.batch_no,
-        expiry_date=row.expiry_date,
-        serial_no=row.serial_no,
-        production_date=row.production_date,
-        remarks=row.remarks,
-        full_string=row.full_string,
-        hri=row.hri,
-        created_at=row.created_at,
+        **to_label_history_response(row).model_dump()
     )
 
 
@@ -241,19 +205,14 @@ async def delete_label_history(
     user_id: int = Query(..., gt=0),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, str]:
-    result = await db.execute(
-        select(LabelHistory).where(LabelHistory.id == history_id)
+    record = await get_owned_record_or_404(
+        db=db,
+        model=LabelHistory,
+        record_id=history_id,
+        user_id=user_id,
+        object_name="history record",
+        forbidden_detail="You do not have permission to delete this record",
     )
-    record = result.scalar_one_or_none()
-
-    if record is None:
-        raise HTTPException(status_code=404, detail="history record not found")
-
-    if record.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to delete this record",
-        )
 
     await db.delete(record)
     await db.commit()

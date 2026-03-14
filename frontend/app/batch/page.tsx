@@ -1,25 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { Upload, Download, CheckCircle, AlertCircle } from "lucide-react";
 
+import { PageHeader } from "@/components/labels/PageHeader";
 import { Button } from "@/components/ui/button";
-import { clearAuthUser, getAuthUser, type AuthUser } from "@/lib/auth";
 import { useBatchUpload } from "@/hooks/useBatchUpload";
-import type { ParsedRow } from "@/types/batch";
-import type { CanvasDefinition, LabelTemplateRecord } from "@/types/template";
-import { buildHri } from "@/lib/gs1";
-import {
-  createDataMatrixSvg,
-  createNormalizedGs1Svg,
-} from "@/features/labels/preview/barcode-svg";
-import { renderCustomSvg } from "@/lib/svgTemplates";
-import { findAiText } from "@/lib/gs1Utils";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
+import type { CanvasDefinition } from "@/types/template";
 import { TemplateGallery } from "@/components/editor/TemplateGallery";
+import { TemplatePreviewDialog } from "@/components/editor/TemplatePreviewDialog";
 
 // ─── Template Excel Generator ─────────────────────────────────────────────────
 
@@ -83,78 +76,6 @@ function ParsedRowsTable({ rows }: { rows: ReturnType<typeof useBatchUpload>["ro
             ))}
           </tbody>
         </table>
-      </div>
-    </div>
-  );
-}
-
-// ─── Sample Label Preview ─────────────────────────────────────────────────────
-
-function findAiTextLocal(hri: string, ai: string): string {
-  return findAiText(hri, ai);
-}
-
-function SampleLabelPreview({
-  row,
-  templateDefinition,
-}: {
-  row: ParsedRow;
-  templateDefinition: CanvasDefinition;
-}) {
-  const svgDataUrl = useMemo(() => {
-    const hri = buildHri({
-      di: row.di,
-      lot: row.lot,
-      expiry: row.expiry,
-      serial: row.serial,
-      productionDate: row.production_date,
-    });
-
-    const dataMatrixSvg = createDataMatrixSvg(hri);
-    if (!dataMatrixSvg) return null;
-
-    const gs1128Svg = createNormalizedGs1Svg(hri);
-    const gs1128DiSvg = createNormalizedGs1Svg(`(01)${row.di}`);
-    const piText = ["11", "17", "10", "21"]
-      .map((ai) => findAiTextLocal(hri, ai))
-      .filter(Boolean)
-      .join("");
-    const gs1128PiSvg = piText ? createNormalizedGs1Svg(piText) : null;
-
-    const svg = renderCustomSvg(
-      {
-        gtin: row.di,
-        hri,
-        batch_no: row.lot,
-        expiry_date: row.expiry,
-        serial_no: row.serial,
-        production_date: row.production_date,
-        dataMatrixSvg,
-        gs1128Svg,
-        gs1128DiSvg,
-        gs1128PiSvg,
-      },
-      templateDefinition,
-    );
-
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }, [row, templateDefinition]);
-
-  return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium">
-        样式预览
-        <span className="ml-2 text-xs font-normal text-muted-foreground">
-          以第 1 行有效数据为例，与导出的 SVG 文件完全一致
-        </span>
-      </p>
-      <div className="inline-block rounded-lg border bg-white p-3 shadow-sm">
-        {svgDataUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={svgDataUrl} alt="标签预览" className="max-w-full" />
-        ) : (
-          <p className="text-sm text-muted-foreground">无法生成预览（条码数据无效）</p>
-        )}
       </div>
     </div>
   );
@@ -226,25 +147,15 @@ function DropZone({ onFile }: { onFile: (f: File) => void }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BatchPage() {
-  const router = useRouter();
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const { authUser, checkingAuth } = useRequireAuth();
   const [templateDefinition, setTemplateDefinition] = useState<CanvasDefinition | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [previewTemplateDefinition, setPreviewTemplateDefinition] = useState<CanvasDefinition | null>(null);
+  const [previewTemplateName, setPreviewTemplateName] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const { phase, rows, errorMsg, progress, batchId, handleFileSelect, startGenerate, reset } =
     useBatchUpload(authUser?.user_id ?? 0);
-
-  useEffect(() => {
-    const user = getAuthUser();
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
-    setAuthUser(user);
-    setCheckingAuth(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   if (checkingAuth || !authUser) {
     return <main className="p-6 text-sm text-muted-foreground">正在检查登录状态…</main>;
@@ -258,25 +169,11 @@ export default function BatchPage() {
   const isGenerating = phase === "generating";
   const isDone = phase === "done";
   const isError = phase === "error";
+  const previewRow = validRows[0] ?? null;
 
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">批量打码通道</h1>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">当前用户：{authUser.username}</span>
-          <Button
-            variant="outline"
-            onClick={() => {
-              clearAuthUser();
-              router.replace("/login");
-            }}
-          >
-            退出登录
-          </Button>
-        </div>
-      </div>
+      <PageHeader title="批量打码通道" titleClassName="text-2xl font-semibold" />
 
       {/* Download Template */}
       <div className="flex items-center gap-3 rounded-xl border bg-muted/30 p-4">
@@ -326,6 +223,12 @@ export default function BatchPage() {
                 userId={authUser.user_id}
                 mode="select"
                 selectedId={selectedTemplateId}
+                canPreview={Boolean(previewRow)}
+                onPreview={(def, name) => {
+                  setPreviewTemplateDefinition(def);
+                  setPreviewTemplateName(name);
+                  setPreviewOpen(true);
+                }}
                 onSelect={(def, id) => {
                   setTemplateDefinition(def);
                   setSelectedTemplateId(id);
@@ -335,15 +238,20 @@ export default function BatchPage() {
             {!templateDefinition && (
               <p className="text-sm text-muted-foreground">
                 请选择一个标签模板后再生成 ·{" "}
-                <a href="/editor" className="text-primary hover:underline">
+                <Link href="/editor" className="text-primary hover:underline">
                   新建模板 →
-                </a>
+                </Link>
               </p>
             )}
-            {templateDefinition && validRows[0] && (
-              <SampleLabelPreview row={validRows[0]} templateDefinition={templateDefinition} />
-            )}
           </div>
+
+          <TemplatePreviewDialog
+            open={previewOpen}
+            onOpenChange={setPreviewOpen}
+            row={previewRow}
+            templateDefinition={previewTemplateDefinition}
+            templateName={previewTemplateName}
+          />
 
           {isGenerating && <ProgressBar current={progress.current} total={progress.total} />}
 

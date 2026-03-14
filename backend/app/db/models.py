@@ -28,6 +28,7 @@ class LabelBatch(Base):
     name: Mapped[str] = mapped_column(String(200))
     source: Mapped[str] = mapped_column(String(20), default="form")  # "excel" | "form"
     total_count: Mapped[int] = mapped_column(Integer, default=1)
+    template_definition: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

@@ -14,8 +14,7 @@ import { useLabelHistory } from "@/hooks/useLabelHistory";
 import { useLabelBatches } from "@/hooks/useLabelBatches";
 import { api } from "@/lib/api";
 import { BATCHES_API_ROUTES } from "@/features/labels/api/routes";
-import type { AuthUser } from "@/lib/auth";
-import type { LabelHistoryItem, PreviewSource } from "@/types/udi";
+import type { AuthUser, LabelHistoryItem, PreviewSource } from "@/types/udi";
 import type { LabelBatchSummary } from "@/types/batch";
 
 // ─── Batch List Table ─────────────────────────────────────────────────────────
