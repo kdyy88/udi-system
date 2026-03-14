@@ -136,6 +136,99 @@ sudo rm -rf backend/.venv frontend/node_modules
 
 ---
 
+## 线上部署
+
+生产环境使用 `docker-compose.prod.yml`，三个服务（PostgreSQL / Backend / Frontend）全部容器化，镜像由本地 Dockerfile 构建。
+
+### 1. 准备环境变量
+
+在项目根目录创建 `.env` 文件（**不要提交到 Git**）：
+
+```env
+# 数据库
+POSTGRES_DB=gs1udi
+POSTGRES_USER=gs1user
+POSTGRES_PASSWORD=your_strong_password
+
+# 后端
+CORS_ORIGINS=https://your-domain.com,https://www.your-domain.com
+WORKERS=4
+
+# 端口映射（宿主机端口，供 Nginx 等反向代理访问）
+BACKEND_PORT=18000
+FRONTEND_PORT=3001
+```
+
+### 2. 构建镜像并启动
+
+```bash
+# 首次部署 / 代码更新后重建镜像
+docker compose -f docker-compose.prod.yml up -d --build
+
+# 仅重启（不重建）
+docker compose -f docker-compose.prod.yml up -d
+```
+
+启动顺序由 `depends_on` + healthcheck 自动保证：PostgreSQL 就绪 → Backend 启动（Alembic 迁移 → Gunicorn 4 workers）→ Frontend 启动。
+
+### 3. 验证
+
+```bash
+# 后端健康检查
+curl http://localhost:18000/api/v1/health
+
+# 查看日志
+docker compose -f docker-compose.prod.yml logs -f backend
+docker compose -f docker-compose.prod.yml logs -f frontend
+```
+
+### 4. Nginx 反向代理（推荐）
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # 前端
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # 后端 API
+    location /api/ {
+        proxy_pass http://127.0.0.1:18000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        client_max_body_size 10m;
+    }
+}
+```
+
+> HTTPS：使用 `certbot --nginx -d your-domain.com` 自动签发 Let's Encrypt 证书。
+
+### 5. 更新部署
+
+```bash
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Alembic 迁移在 Backend 容器启动时由 `entrypoint.sh` 自动执行，无需手动操作。
+
+### 6. 停止 / 清理
+
+```bash
+# 停止但保留数据卷
+docker compose -f docker-compose.prod.yml down
+
+# 停止并删除数据库数据（危险）
+docker compose -f docker-compose.prod.yml down -v
+```
+
+---
+
 ## 源码导读
 
 - [Docs/SOURCE_MAP.md](Docs/SOURCE_MAP.md) — 调用链速查
