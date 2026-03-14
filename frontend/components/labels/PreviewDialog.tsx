@@ -218,11 +218,8 @@ export function PreviewDialog({
             </div>
 
             {/* Barcode canvas */}
-            <div
-              ref={previewRef}
-              className="rounded-md border border-dashed p-2 sm:p-3 -mx-2 sm:mx-0 overflow-x-auto"
-            >
-              <div className="inline-block min-w-full">
+            <div className="rounded-md border border-dashed p-2 sm:p-3 -mx-2 sm:mx-0 overflow-x-auto">
+              <div ref={previewRef} className="inline-block min-w-full">
                 {barcodeError ? (
                   <div className="flex items-center justify-center py-8 text-sm text-destructive">
                     条码渲染失败：{barcodeError}

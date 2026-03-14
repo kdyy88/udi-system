@@ -35,7 +35,7 @@ export async function exportPreviewNode(
 ) {
   if (format === "png") {
     const dataUrl = await toPng(node, {
-      backgroundColor: "transparent",
+      backgroundColor: "#ffffff",
       pixelRatio: 2,
       cacheBust: true,
     });
