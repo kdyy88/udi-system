@@ -54,6 +54,21 @@ const DEFAULT_WIDTH  = 378; // ~100mm
 const DEFAULT_HEIGHT = 227; // ~60mm
 export const MM_TO_PX_RATIO = 3.7795275591; // 1 mm in px
 
+function generateElementId(): string {
+  if (typeof globalThis !== "undefined") {
+    const cryptoApi = globalThis.crypto;
+    if (cryptoApi?.randomUUID) {
+      return cryptoApi.randomUUID();
+    }
+    if (cryptoApi?.getRandomValues) {
+      const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+      return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+  }
+
+  return `el-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Snap a raw px value to the nearest grid multiple. */
 export function snapToGrid(value: number, gridPx: number): number {
   return Math.round(value / gridPx) * gridPx;
@@ -74,7 +89,7 @@ export const useCanvasStore = create<CanvasStore>()(
 
       // Actions
       addElement: (el) =>
-        set((s) => ({ elements: [...s.elements, { ...el, id: crypto.randomUUID() } as CanvasElement] })),
+        set((s) => ({ elements: [...s.elements, { ...el, id: generateElementId() } as CanvasElement] })),
 
       updateElement: (id, patch) =>
         set((s) => ({
