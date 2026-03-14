@@ -1,13 +1,24 @@
 "use client";
 
+import {
+  AlignHorizontalJustifyStart,
+  AlignHorizontalJustifyCenter,
+  AlignHorizontalJustifyEnd,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+} from "lucide-react";
 import { useCanvasStore, barcodeAspectRatio } from "@/stores/canvasStore";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { pxToMm, mmToPx, GS1_AI_LABELS, type GS1AiField, type BarcodeType } from "@/types/template";
 
 export function PropertiesPanel() {
   const selectedId = useCanvasStore((s) => s.selectedId);
   const elements = useCanvasStore((s) => s.elements);
   const updateElement = useCanvasStore((s) => s.updateElement);
+  const widthPx = useCanvasStore((s) => s.widthPx);
+  const heightPx = useCanvasStore((s) => s.heightPx);
 
   const el = elements.find((e) => e.id === selectedId);
 
@@ -48,8 +59,43 @@ export function PropertiesPanel() {
       : `比例锁定 ${aspectRatio}:1（宽:高）`
     : null;
 
+  const alignH = (mode: "left" | "center" | "right") => {
+    if (mode === "left") update({ x: 0 });
+    else if (mode === "center") update({ x: Math.round((widthPx - el.w) / 2) });
+    else update({ x: widthPx - el.w });
+  };
+  const alignV = (mode: "top" | "middle" | "bottom") => {
+    if (mode === "top") update({ y: 0 });
+    else if (mode === "middle") update({ y: Math.round((heightPx - el.h) / 2) });
+    else update({ y: heightPx - el.h });
+  };
+
   return (
     <div className="space-y-4 text-sm">
+      {/* Level 3: Alignment to canvas */}
+      <Section title="对齐到画布">
+        <div className="grid grid-cols-3 gap-1">
+          <Button size="sm" variant="outline" title="左对齐" onClick={() => alignH("left")}>
+            <AlignHorizontalJustifyStart className="size-4" />
+          </Button>
+          <Button size="sm" variant="outline" title="水平居中" onClick={() => alignH("center")}>
+            <AlignHorizontalJustifyCenter className="size-4" />
+          </Button>
+          <Button size="sm" variant="outline" title="右对齐" onClick={() => alignH("right")}>
+            <AlignHorizontalJustifyEnd className="size-4" />
+          </Button>
+          <Button size="sm" variant="outline" title="顶部对齐" onClick={() => alignV("top")}>
+            <AlignVerticalJustifyStart className="size-4" />
+          </Button>
+          <Button size="sm" variant="outline" title="垂直居中" onClick={() => alignV("middle")}>
+            <AlignVerticalJustifyCenter className="size-4" />
+          </Button>
+          <Button size="sm" variant="outline" title="底部对齐" onClick={() => alignV("bottom")}>
+            <AlignVerticalJustifyEnd className="size-4" />
+          </Button>
+        </div>
+      </Section>
+
       {/* Common: position and size */}
       <Section title="位置与尺寸">
         <Row label="X (mm)">

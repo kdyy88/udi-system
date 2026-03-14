@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.db.models import SystemConfig, User
 from app.db.session import get_db
@@ -64,6 +65,7 @@ async def set_hidden_templates(
     await _require_admin(user_id, db)
     row = await _get_or_create_config(db, _KEY, [])
     row.value = payload.value
+    flag_modified(row, "value")
     await db.commit()
     await db.refresh(row)
     return HiddenTemplatesResponse(value=row.value or [])
@@ -104,6 +106,7 @@ async def set_template_override(
     overrides: dict[str, Any] = dict(row.value or {})
     overrides[sys_id] = payload.model_dump()
     row.value = overrides
+    flag_modified(row, "value")
     await db.commit()
     await db.refresh(row)
     return TemplateOverridesResponse(value=row.value or {})
@@ -120,6 +123,7 @@ async def delete_template_override(
     overrides: dict[str, Any] = dict(row.value or {})
     overrides.pop(sys_id, None)
     row.value = overrides
+    flag_modified(row, "value")
     await db.commit()
     await db.refresh(row)
     return TemplateOverridesResponse(value=row.value or {})

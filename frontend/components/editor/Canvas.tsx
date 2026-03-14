@@ -9,29 +9,41 @@
  * - react-rnd `scale={zoom}` prop corrects drag/resize event offsets when zoomed
  * - BarcodeElements render as placeholder divs only — bwip-js never called here
  * - Each RndElement subscribes only to its own element slice via Zustand selector
+ *
+ * Level 1 — Keyboard nudging:
+ *   Arrow keys  → move selected element ±1px
+ *   Shift+Arrow → move selected element ±10px
+ *   Delete/Backspace → delete selected element
+ *
+ * Level 2 — Grid / Snap:
+ *   When snapEnabled, visual CSS grid is drawn and react-rnd dragGrid/resizeGrid are set.
  */
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Rnd } from "react-rnd";
 import { useShallow } from "zustand/react/shallow";
 import { useCanvasStore, barcodeAspectRatio } from "@/stores/canvasStore";
 import type { CanvasElement } from "@/types/template";
 
 const MIN_SIZE = 10;
+/** Step for Shift+Arrow nudge (px). */
+const NUDGE_BIG = 10;
+/** Step for plain Arrow nudge (px). */
+const NUDGE_SMALL = 1;
 
 // ─── Individual draggable/resizable element ───────────────────────────────────
 
-function RndElement({ id, zoom }: { id: string; zoom: number }) {
+function RndElement({ id, zoom, gridPx, snapEnabled }: { id: string; zoom: number; gridPx: number; snapEnabled: boolean }) {
   const el = useCanvasStore((s) => s.elements.find((e) => e.id === id));
   const selectedId = useCanvasStore((s) => s.selectedId);
   const setSelected = useCanvasStore((s) => s.setSelected);
   const updateElement = useCanvasStore((s) => s.updateElement);
-  const { undo: _undo, redo: _redo } = useCanvasStore.temporal.getState();
 
   if (!el) return null;
 
   const isSelected = selectedId === id;
   const aspectLock = el.type === "barcode" ? barcodeAspectRatio(el.barcodeType) : false;
+  const snapGrid: [number, number] = snapEnabled ? [gridPx, gridPx] : [8, 8];
 
   return (
     <Rnd
@@ -42,6 +54,8 @@ function RndElement({ id, zoom }: { id: string; zoom: number }) {
       minWidth={MIN_SIZE}
       minHeight={MIN_SIZE}
       lockAspectRatio={aspectLock}
+      dragGrid={snapGrid}
+      resizeGrid={snapGrid}
       onMouseDown={() => setSelected(id)}
       onDragStop={(_e, d) => {
         updateElement(id, { x: d.x, y: d.y });
@@ -132,7 +146,58 @@ export function Canvas({ zoom = 1 }: { zoom?: number }) {
   const heightPx = useCanvasStore((s) => s.heightPx);
   const elementIds = useCanvasStore(useShallow((s) => s.elements.map((e) => e.id)));
   const setSelected = useCanvasStore((s) => s.setSelected);
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled);
+  const gridPx = useCanvasStore((s) => s.gridPx);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // ── Level 1: Keyboard nudging ────────────────────────────────────────────
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Ignore when focused in an input / textarea / select
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      const { selectedId, elements, updateElement, deleteElement, widthPx: cw, heightPx: ch } =
+        useCanvasStore.getState();
+      if (!selectedId) return;
+
+      const el = elements.find((el) => el.id === selectedId);
+      if (!el) return;
+
+      const step = e.shiftKey ? NUDGE_BIG : NUDGE_SMALL;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        updateElement(selectedId, { x: Math.max(0, el.x - step) });
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        updateElement(selectedId, { x: Math.min(cw - el.w, el.x + step) });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        updateElement(selectedId, { y: Math.max(0, el.y - step) });
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        updateElement(selectedId, { y: Math.min(ch - el.h, el.y + step) });
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteElement(selectedId);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // ── Level 2: Grid background ─────────────────────────────────────────────
+  const gridStyle: React.CSSProperties = snapEnabled
+    ? {
+        backgroundImage: [
+          `linear-gradient(to right,  rgba(99,102,241,0.12) 1px, transparent 1px)`,
+          `linear-gradient(to bottom, rgba(99,102,241,0.12) 1px, transparent 1px)`,
+        ].join(","),
+        backgroundSize: `${gridPx}px ${gridPx}px`,
+      }
+    : {};
 
   return (
     // Outer scroll container — fixed display size
@@ -150,17 +215,17 @@ export function Canvas({ zoom = 1 }: { zoom?: number }) {
         <div
           ref={containerRef}
           className="relative bg-white shadow"
-          style={{ width: widthPx, height: heightPx }}
+          style={{ width: widthPx, height: heightPx, ...gridStyle }}
           onClick={(e) => {
-            // Deselect when clicking empty canvas area
             if (e.target === containerRef.current) setSelected(null);
           }}
         >
           {elementIds.map((id) => (
-            <RndElement key={id} id={id} zoom={zoom} />
+            <RndElement key={id} id={id} zoom={zoom} gridPx={gridPx} snapEnabled={snapEnabled} />
           ))}
         </div>
       </div>
     </div>
   );
 }
+

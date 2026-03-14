@@ -14,6 +14,8 @@ import { useCreateTemplate } from "@/hooks/useLabelTemplates";
 import { useSaveSystemTemplateOverride } from "@/hooks/useSystemTemplateOverrides";
 import { clearAuthUser, getAuthUser, isAdmin, type AuthUser } from "@/lib/auth";
 import { SYSTEM_TEMPLATES } from "@/lib/systemTemplates";
+import { api } from "@/lib/api";
+import type { CanvasDefinition } from "@/types/template";
 
 export default function NewEditorPage() {
   const router = useRouter();
@@ -42,12 +44,21 @@ export default function NewEditorPage() {
     if (seed) {
       const sysTmpl = SYSTEM_TEMPLATES.find((t) => t.id === seed);
       if (sysTmpl) {
-        loadCanvas(sysTmpl.canvas);
         setTemplateName(sysTmpl.name);
-        // admin edits the original; non-admin would not reach this flow
         if (isAdmin(user)) {
           setEditingSysId(seed);
         }
+        // Fetch DB overrides so the editor loads the last-saved version, not the factory default
+        api
+          .get<{ value: Record<string, CanvasDefinition> }>("/api/v1/system/template-overrides")
+          .then((r) => {
+            const override = r.data?.value?.[seed];
+            loadCanvas(override ?? sysTmpl.canvas);
+          })
+          .catch(() => {
+            // If the fetch fails, fall back to factory default
+            loadCanvas(sysTmpl.canvas);
+          });
         return;
       }
     }

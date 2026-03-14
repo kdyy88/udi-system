@@ -20,6 +20,9 @@ type CanvasState = {
   elements: CanvasElement[];
   // Selection
   selectedId: string | null;
+  // Grid / snap
+  snapEnabled: boolean;
+  gridPx: number; // px per grid cell; 1 mm ≈ 3.78 px
 };
 
 type CanvasActions = {
@@ -31,6 +34,9 @@ type CanvasActions = {
   setSelected: (id: string | null) => void;
   // Canvas size
   setCanvasSize: (widthPx: number, heightPx: number) => void;
+  // Grid / snap
+  toggleSnap: () => void;
+  setGridPx: (px: number) => void;
   // Load a full CanvasDefinition (e.g. from DB)
   loadCanvas: (def: CanvasDefinition) => void;
   // Clear canvas
@@ -44,6 +50,12 @@ type CanvasStore = CanvasState & CanvasActions;
 // ─── Default dimensions ── 100mm × 60mm at 3.7795px/mm ───────────────────────
 const DEFAULT_WIDTH  = 378; // ~100mm
 const DEFAULT_HEIGHT = 227; // ~60mm
+export const MM_TO_PX_RATIO = 3.7795275591; // 1 mm in px
+
+/** Snap a raw px value to the nearest grid multiple. */
+export function snapToGrid(value: number, gridPx: number): number {
+  return Math.round(value / gridPx) * gridPx;
+}
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +67,8 @@ export const useCanvasStore = create<CanvasStore>()(
       heightPx: DEFAULT_HEIGHT,
       elements: [],
       selectedId: null,
+      snapEnabled: false,
+      gridPx: Math.round(MM_TO_PX_RATIO * 2), // 2 mm default grid
 
       // Actions
       addElement: (el) =>
@@ -76,6 +90,10 @@ export const useCanvasStore = create<CanvasStore>()(
       setSelected: (id) => set({ selectedId: id }),
 
       setCanvasSize: (widthPx, heightPx) => set({ widthPx, heightPx }),
+
+      toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+
+      setGridPx: (px) => set({ gridPx: px }),
 
       loadCanvas: (def) =>
         set({

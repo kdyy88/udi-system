@@ -1,9 +1,9 @@
 "use client";
 
-import { Undo2, Redo2, Trash2 } from "lucide-react";
+import { Undo2, Redo2, Trash2, Magnet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useCanvasStore, makeBarcode, makeText, makeRect } from "@/stores/canvasStore";
+import { useCanvasStore, makeBarcode, makeText, makeRect, MM_TO_PX_RATIO } from "@/stores/canvasStore";
 import { pxToMm, mmToPx } from "@/types/template";
 
 export function ElementToolbar() {
@@ -14,8 +14,20 @@ export function ElementToolbar() {
   const heightPx = useCanvasStore((s) => s.heightPx);
   const setCanvasSize = useCanvasStore((s) => s.setCanvasSize);
 
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled);
+  const gridPx = useCanvasStore((s) => s.gridPx);
+  const toggleSnap = useCanvasStore((s) => s.toggleSnap);
+  const setGridPx = useCanvasStore((s) => s.setGridPx);
+
   const handleUndo = () => useCanvasStore.temporal.getState().undo();
   const handleRedo = () => useCanvasStore.temporal.getState().redo();
+
+  // Pre-computed grid presets (px values ≈ 1mm / 2mm / 5mm)
+  const GRID_OPTIONS = [
+    { label: "1 mm", value: Math.round(MM_TO_PX_RATIO * 1) },
+    { label: "2 mm", value: Math.round(MM_TO_PX_RATIO * 2) },
+    { label: "5 mm", value: Math.round(MM_TO_PX_RATIO * 5) },
+  ];
 
   return (
     <div className="flex flex-col gap-3">
@@ -120,6 +132,32 @@ export function ElementToolbar() {
           >
             <Trash2 className="size-4" />
           </Button>
+        </div>
+      </div>
+
+      {/* Grid / Snap */}
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">网格吸附</p>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={snapEnabled ? "default" : "outline"}
+            className="shrink-0"
+            onClick={toggleSnap}
+            title={snapEnabled ? "关闭吸附" : "开启吸附"}
+          >
+            <Magnet className="size-4" />
+          </Button>
+          <select
+            className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm disabled:opacity-50"
+            value={gridPx}
+            disabled={!snapEnabled}
+            onChange={(e) => setGridPx(Number(e.target.value))}
+          >
+            {GRID_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       </div>
     </div>
