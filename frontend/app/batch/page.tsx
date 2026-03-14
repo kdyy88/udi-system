@@ -170,6 +170,7 @@ export default function BatchPage() {
   const isDone = phase === "done";
   const isError = phase === "error";
   const previewRow = validRows[0] ?? null;
+  const invalidRows = rows.filter((r) => r.validationError !== null);
 
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
@@ -215,6 +216,16 @@ export default function BatchPage() {
       {(isValidated || isSaving || isGenerating || isDone) && (
         <div className="space-y-5">
           <ParsedRowsTable rows={rows} />
+
+          {invalidRows.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-medium">发现 {invalidRows.length} 行校验失败</p>
+                <p>请先修正表格中的错误后重新上传；日期字段仅支持 YYMMDD、YY/MM/DD 或 YYYY-MM-DD。</p>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-3">
             <h2 className="font-medium">选择标签模板</h2>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, LogOut, Menu, UserCircle2 } from "lucide-react";
@@ -13,13 +14,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { clearAuthUser, getAuthUser } from "@/lib/auth";
+import { clearAuthUser, getAuthUser, subscribeAuthUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const authUser = getAuthUser();
+  const authUser = useSyncExternalStore(subscribeAuthUser, getAuthUser, () => null);
   const navItems = [
     { href: "/", label: "标签生成", active: pathname === "/" },
     { href: "/batch", label: "批量打码", active: pathname === "/batch" },

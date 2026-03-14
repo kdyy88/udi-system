@@ -118,6 +118,57 @@ function validatePiPresence(raw: {
   return "至少需要填写一个 PI：批次号、有效期、序列号或生产日期";
 }
 
+function normalizeGs1Date(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const raw = value.trim();
+
+  if (/^\d{2}\/\d{2}\/\d{2}$/.test(raw)) {
+    const [yy, mm, dd] = raw.split("/");
+    if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) {
+      return null;
+    }
+    return `${yy}${mm}${dd}`;
+  }
+
+  if (/^\d{6}$/.test(raw)) {
+    const mm = Number(raw.slice(2, 4));
+    const dd = Number(raw.slice(4, 6));
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) {
+      return null;
+    }
+    return raw;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const [yyyy, mm, dd] = raw.split("-");
+    if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) {
+      return null;
+    }
+    return `${yyyy.slice(-2)}${mm}${dd}`;
+  }
+
+  return null;
+}
+
+function validateAndNormalizeDate(
+  value: string | null | undefined,
+  fieldLabel: string,
+): { normalized: string | null; error: string | null } {
+  if (!value) {
+    return { normalized: null, error: null };
+  }
+
+  const normalized = normalizeGs1Date(value);
+  if (!normalized) {
+    return {
+      normalized: null,
+      error: `${fieldLabel}格式错误：请使用 YYMMDD、YY/MM/DD 或 YYYY-MM-DD`,
+    };
+  }
+
+  return { normalized, error: null };
+}
+
 export async function parseExcelFile(file: File): Promise<ParsedRow[]> {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: "array", cellText: true, cellDates: false });
@@ -154,15 +205,28 @@ export async function parseExcelFile(file: File): Promise<ParsedRow[]> {
     const di = raw.di ?? "";
     if (!di) continue; // skip empty rows
 
-    const validationError = validateGtin(di) ?? validatePiPresence(raw);
+    const expiryResult = validateAndNormalizeDate(raw.expiry, "有效期");
+    const productionDateResult = validateAndNormalizeDate(raw.production_date, "生产日期");
+
+    const normalizedRaw = {
+      ...raw,
+      expiry: expiryResult.normalized,
+      production_date: productionDateResult.normalized,
+    };
+
+    const validationError =
+      validateGtin(di) ??
+      expiryResult.error ??
+      productionDateResult.error ??
+      validatePiPresence(normalizedRaw);
 
     rows.push({
       rowIndex: r,
       di,
       lot: raw.lot ?? null,
-      expiry: raw.expiry ?? null,
+      expiry: expiryResult.normalized,
       serial: raw.serial ?? null,
-      production_date: raw.production_date ?? null,
+      production_date: productionDateResult.normalized,
       remarks: raw.remarks ?? null,
       validationError,
     });

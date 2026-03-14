@@ -1,30 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 
-import { clearAuthUser, getAuthUser } from "@/lib/auth";
-import type { AuthUser } from "@/types/udi";
+import { clearAuthUser, getAuthUser, subscribeAuthUser } from "@/lib/auth";
+
+function useHydrated() {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+}
 
 export function useRequireAuth() {
   const router = useRouter();
-  const [authUser, setAuthUser] = useState<AuthUser | null>(() => getAuthUser());
+  const hydrated = useHydrated();
+  const authUser = useSyncExternalStore(subscribeAuthUser, getAuthUser, () => null);
 
   useEffect(() => {
-    if (!authUser) {
+    if (hydrated && !authUser) {
       router.replace("/login");
     }
-  }, [authUser, router]);
+  }, [authUser, hydrated, router]);
 
   const logout = useCallback(() => {
-    setAuthUser(null);
     clearAuthUser();
     router.replace("/login");
   }, [router]);
 
   return {
     authUser,
-    checkingAuth: authUser === null,
+    checkingAuth: !hydrated,
     logout,
   };
 }
