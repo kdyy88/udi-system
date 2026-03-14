@@ -13,7 +13,8 @@ import { api } from "@/lib/api";
 import { parseExcelFile } from "@/lib/excelParser";
 import { exportBatchToZip, fetchAllBatchLabels } from "@/lib/batchExporter";
 import { BATCHES_API_ROUTES } from "@/features/labels/api/routes";
-import type { BatchTemplate, GenerateProgress, BatchPhase, ParsedRow } from "@/types/batch";
+import type { GenerateProgress, BatchPhase, ParsedRow } from "@/types/batch";
+import type { CanvasDefinition } from "@/types/template";
 
 type BatchCreateResponse = {
   batch_id: number;
@@ -62,9 +63,9 @@ export function useBatchUpload(userId: number) {
     [set],
   );
 
-  // ── 2. Save to backend then render via PreviewTemplateCanvas ──────────────
+  // ── 2. Save to backend then render via bwip-js ───────────────────────────
   const startGenerate = useCallback(
-    async (template: BatchTemplate) => {
+    async (templateDefinition: CanvasDefinition) => {
       if (state.phase !== "validated" || userId === 0) return;
 
       const validRows = state.rows.filter((r) => r.validationError === null);
@@ -110,7 +111,7 @@ export function useBatchUpload(userId: number) {
           batchId,
           batchName,
           labels,
-          template,
+          templateDefinition,
           onProgress: (current, total) => set({ progress: { current, total } }),
         });
 

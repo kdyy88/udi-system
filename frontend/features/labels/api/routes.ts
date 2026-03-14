@@ -13,3 +13,8 @@ export const BATCHES_API_ROUTES = {
   batchById: (id: number) => `/api/v1/batches/${id}`,
 } as const;
 
+export const TEMPLATE_ROUTES = {
+  list: "/api/v1/templates",
+  create: "/api/v1/templates",
+  byId: (id: number) => `/api/v1/templates/${id}`,
+} as const;

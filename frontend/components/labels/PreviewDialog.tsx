@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useMemo, useState } from "react";
-import { Download, LayoutTemplate } from "lucide-react";
+import { Download } from "lucide-react";
 import { toast } from "sonner";
 
 import { PreviewTemplateCanvas } from "./PreviewTemplateCanvas";
@@ -13,17 +13,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DEFAULT_TEMPLATE_KEY,
-  PREVIEW_TEMPLATES,
-  type TemplateKey,
-} from "@/lib/preview-templates";
 import { toDisplayDate } from "@/lib/dateUtils";
 import { useBwipPreview } from "@/features/labels/preview/useLabelPreviewOrchestrator";
 import { exportPreviewNode, type PreviewExportFormat } from "@/features/labels/preview/export";
 import { saveLabelToBackend } from "@/features/labels/preview/save";
 import { getAuthUser } from "@/lib/auth";
 import type { PreviewSource } from "@/types/udi";
+import { useListTemplates } from "@/hooks/useLabelTemplates";
+import { recordToDefinition } from "@/types/template";
+import { renderCustomSvg, type LabelSvgInput } from "@/lib/svgTemplates";
+import { applyOverrides, SYSTEM_TEMPLATES } from "@/lib/systemTemplates";
+import { useSystemTemplateOverrides } from "@/hooks/useSystemTemplateOverrides";
 
 type PreviewDialogProps = {
   open: boolean;
@@ -41,8 +41,15 @@ export function PreviewDialog({
   onSaved,
 }: PreviewDialogProps) {
   const previewRef = useRef<HTMLDivElement>(null);
-  const [template, setTemplate] = useState<TemplateKey>(DEFAULT_TEMPLATE_KEY);
   const [saving, setSaving] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+
+  const authUser = getAuthUser();
+  const { data: templateList } = useListTemplates(authUser?.user_id ?? 0);
+  const templates = templateList?.items ?? [];
+
+  const { data: overridesData } = useSystemTemplateOverrides();
+  const effectiveSystemTemplates = applyOverrides(overridesData?.value ?? {});
 
   // Extract canonical fields regardless of source kind
   const previewMeta = useMemo(() => {
@@ -68,27 +75,46 @@ export function PreviewDialog({
     previewMeta?.hri
   );
 
-  const selectedTemplate = useMemo(
-    () => PREVIEW_TEMPLATES.find((item) => item.key === template),
-    [template]
-  );
+  // Build LabelSvgInput for custom template rendering
+  const labelSvgInput = useMemo<LabelSvgInput | null>(() => {
+    if (!previewMeta || !datamatrixSvg) return null;
+    return {
+      gtin: previewMeta.di,
+      hri: previewMeta.hri,
+      dataMatrixSvg: datamatrixSvg,
+      gs1128Svg: gs1128Svg ?? null,
+      gs1128DiSvg: gs1128DiOnlySvg ?? null,
+      gs1128PiSvg: gs1128PiOnlySvg ?? null,
+    };
+  }, [previewMeta, datamatrixSvg, gs1128Svg, gs1128DiOnlySvg, gs1128PiOnlySvg]);
+
+  // Render custom template SVG string when a template is selected
+  const customSvgString = useMemo(() => {
+    if (!selectedTemplateId || !labelSvgInput) return null;
+    try {
+      // System template
+      const sysTmpl = effectiveSystemTemplates.find((t) => t.id === selectedTemplateId);
+      if (sysTmpl) return renderCustomSvg(labelSvgInput, sysTmpl.canvas);
+      // User template
+      const record = templates.find((t) => String(t.id) === selectedTemplateId);
+      if (record) return renderCustomSvg(labelSvgInput, recordToDefinition(record));
+    } catch { /* fall through to default */ }
+    return null;
+  }, [selectedTemplateId, labelSvgInput, templates, effectiveSystemTemplates]);
 
   const handleDownload = async (format: PreviewExportFormat) => {
-    if (!previewRef.current || !previewSource || !previewMeta) {
+    if (!previewSource || !previewMeta) {
       toast.error("暂无可下载的预览内容");
       return;
     }
 
     // Brand-new label: save to backend before downloading
     if (previewSource.kind === "local") {
-      const authUser = getAuthUser();
-      if (!authUser) {
-        toast.error("请先登录");
-        return;
-      }
+      const user = getAuthUser();
+      if (!user) { toast.error("请先登录"); return; }
       setSaving(true);
       try {
-        await saveLabelToBackend(previewSource.data, authUser.user_id);
+        await saveLabelToBackend(previewSource.data, user.user_id);
         toast.success("已保存至历史记录");
         onSaved?.();
       } catch {
@@ -99,8 +125,21 @@ export function PreviewDialog({
       setSaving(false);
     }
 
+    // For custom template + SVG format, download the raw SVG string directly
+    if (customSvgString && format === "svg") {
+      const blob = new Blob([customSvgString], { type: "image/svg+xml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "udi-label.svg";
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    if (!previewRef.current) { toast.error("暂无可下载的预览内容"); return; }
     try {
-      await exportPreviewNode(previewRef.current, template, format);
+      await exportPreviewNode(previewRef.current, "label", format);
     } catch {
       toast.error("下载失败，请重试");
     }
@@ -129,53 +168,54 @@ export function PreviewDialog({
           <DialogDescription>
             {previewSource?.kind === "local"
               ? "点击下载按钮将同时保存至历史记录"
-              : "历史记录预览 · 支持模板切换与下载"}
+              : "历史记录预览 · 支持下载"}
           </DialogDescription>
         </DialogHeader>
 
         {previewSource && previewMeta ? (
           <div className="mt-4 space-y-4">
-            {/* Template switcher */}
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                  <LayoutTemplate className="size-4" />
-                  模板
-                </span>
-                {PREVIEW_TEMPLATES.map((item) => (
-                  <Button
-                    key={item.key}
-                    size="sm"
-                    variant={template === item.key ? "default" : "outline"}
-                    onClick={() => setTemplate(item.key)}
-                    className="text-xs"
-                  >
-                    {item.label}
-                  </Button>
-                ))}
-              </div>
-
-              {/* Download buttons */}
-              <div className="flex flex-wrap items-center gap-2">
-                {(["png", "svg", "pdf"] as PreviewExportFormat[]).map((fmt) => (
-                  <Button
-                    key={fmt}
-                    size="sm"
-                    variant="outline"
-                    disabled={saving || !!barcodeError}
-                    onClick={() => void handleDownload(fmt)}
-                    className="text-xs"
-                  >
-                    <Download className="size-4" />
-                    {saving ? "保存中..." : fmt.toUpperCase()}
-                  </Button>
-                ))}
-              </div>
+            {/* Template selector */}
+            <div className="flex items-center gap-2 text-sm">
+              <span className="shrink-0 text-muted-foreground">标签模板</span>
+              <select
+                className="flex-1 rounded-md border bg-background px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                value={selectedTemplateId ?? ""}
+                onChange={(e) =>
+                  setSelectedTemplateId(e.target.value || null)
+                }
+              >
+                <option value="">默认布局</option>
+                <optgroup label="系统默认">
+                  {effectiveSystemTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </optgroup>
+                {templates.length > 0 && (
+                  <optgroup label="我的模板">
+                    {templates.map((t) => (
+                      <option key={t.id} value={String(t.id)}>{t.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
             </div>
 
-            {selectedTemplate ? (
-              <p className="text-xs text-muted-foreground">{selectedTemplate.description}</p>
-            ) : null}
+            {/* Download buttons */}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {(["png", "svg", "pdf"] as PreviewExportFormat[]).map((fmt) => (
+                <Button
+                  key={fmt}
+                  size="sm"
+                  variant="outline"
+                  disabled={saving || !!barcodeError}
+                  onClick={() => void handleDownload(fmt)}
+                  className="text-xs"
+                >
+                  <Download className="size-4" />
+                  {saving ? "保存中..." : fmt.toUpperCase()}
+                </Button>
+              ))}
+            </div>
 
             {/* Barcode canvas */}
             <div
@@ -187,9 +227,16 @@ export function PreviewDialog({
                   <div className="flex items-center justify-center py-8 text-sm text-destructive">
                     条码渲染失败：{barcodeError}
                   </div>
+                ) : customSvgString ? (
+                  // Custom template: render the SVG directly
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`data:image/svg+xml;utf8,${encodeURIComponent(customSvgString)}`}
+                    alt="Label preview"
+                    className="max-w-full"
+                  />
                 ) : canvasPreview ? (
                   <PreviewTemplateCanvas
-                    template={template}
                     preview={canvasPreview}
                     expiryDisplay={toDisplayDate(previewMeta.expiryDate)}
                   />
@@ -216,5 +263,3 @@ export function PreviewDialog({
     </Dialog>
   );
 }
-
-

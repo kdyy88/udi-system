@@ -2,9 +2,7 @@
  * Batch label exporter — pure SVG, no DOM required.
  *
  * Pipeline:
- *   barcode-svg.ts (bwip-js) → svgTemplates.ts (compose) → JSZip (.svg files)
- *
- * Produces true vector SVG files whose layouts mirror PreviewTemplateCanvas.tsx.
+ *   barcode-svg.ts (bwip-js) → svgTemplates.ts (renderCustomSvg) → JSZip (.svg files)
  */
 import JSZip from "jszip";
 
@@ -13,14 +11,13 @@ import {
   createNormalizedGs1Svg,
 } from "@/features/labels/preview/barcode-svg";
 import {
-  renderCompactSvg,
-  renderDualSvg,
-  renderDetailSvg,
+  renderCustomSvg,
   type LabelSvgInput,
 } from "@/lib/svgTemplates";
+import { findAiText } from "@/lib/gs1Utils";
 import { api } from "@/lib/api";
 import { BATCHES_API_ROUTES } from "@/features/labels/api/routes";
-import type { TemplateKey } from "@/lib/preview-templates";
+import type { CanvasDefinition } from "@/types/template";
 import type { LabelHistoryItem } from "@/types/udi";
 
 const FETCH_PAGE_SIZE = 200;
@@ -56,11 +53,10 @@ export async function fetchAllBatchLabels(
 
 // ─── render one label as SVG (no DOM) ────────────────────────────────────────
 
-function findAiText(hri: string, ai: string): string {
-  return hri.match(new RegExp(`\\(${ai}\\)[^()]+`))?.[0] ?? "";
-}
-
-function renderLabelToSvg(label: LabelHistoryItem, template: TemplateKey): string | null {
+function renderLabelToSvg(
+  label: LabelHistoryItem,
+  templateDefinition: CanvasDefinition,
+): string | null {
   const { hri } = label;
 
   const dataMatrixSvg = createDataMatrixSvg(hri);
@@ -82,9 +78,7 @@ function renderLabelToSvg(label: LabelHistoryItem, template: TemplateKey): strin
     gs1128PiSvg: piText ? createNormalizedGs1Svg(piText) : null,
   };
 
-  if (template === "compact") return renderCompactSvg(input);
-  if (template === "dual")    return renderDualSvg(input);
-  return renderDetailSvg(input);
+  return renderCustomSvg(input, templateDefinition);
 }
 
 // ─── public API ──────────────────────────────────────────────────────────────
@@ -93,7 +87,7 @@ export type BatchExportOptions = {
   batchId: number;
   batchName: string;
   labels: LabelHistoryItem[];
-  template: TemplateKey;
+  templateDefinition: CanvasDefinition;
   onProgress: (current: number, total: number) => void;
 };
 
@@ -101,7 +95,7 @@ export type BatchExportOptions = {
  * Render every label to SVG (pure vector, no DOM) and pack into a ZIP.
  */
 export async function exportBatchToZip(options: BatchExportOptions): Promise<Blob> {
-  const { labels, template, onProgress } = options;
+  const { labels, templateDefinition, onProgress } = options;
   const zip = new JSZip();
   const folder = zip.folder("labels")!;
 
@@ -111,7 +105,7 @@ export async function exportBatchToZip(options: BatchExportOptions): Promise<Blo
       ? label.serial_no.trim().replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 20)
       : String(i + 1).padStart(4, "0");
 
-    const svg = renderLabelToSvg(label, template);
+    const svg = renderLabelToSvg(label, templateDefinition);
     if (svg) {
       folder.file(`${label.gtin}_${serial4}.svg`, svg);
     }

@@ -34,6 +34,7 @@ export default function LoginPage() {
       setAuthUser({
         user_id: response.data.user_id,
         username: response.data.username,
+        role: response.data.role ?? "operator",
       });
       toast.success("登录成功");
       router.replace("/");

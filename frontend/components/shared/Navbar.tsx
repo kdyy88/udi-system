@@ -24,6 +24,12 @@ export function Navbar() {
           >
             历史台账
           </Link>
+          <Link
+            href="/templates"
+            className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            标签模板
+          </Link>
         </nav>
       </div>
     </header>

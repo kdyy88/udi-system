@@ -1,6 +1,6 @@
 # GS1 UDI System
 
-GS1 UDI 标签生成系统。**当前版本：v3.1**
+GS1 UDI 标签生成系统。**当前版本：v3.6**
 
 - 前端：Next.js 16 + shadcn/ui + TanStack Query
 - 后端：FastAPI + SQLAlchemy 2.0（全链路 async）
@@ -99,7 +99,7 @@ pnpm install && pnpm dev
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/auth/login` | 登录 |
+| POST | `/api/v1/auth/login` | 登录（响应含 `role` 字段） |
 | POST | `/api/v1/labels/generate` | 生成标签并入库（导出时触发） |
 | GET  | `/api/v1/labels/history` | 历史查询，支持 `gtin`、`batch_no`、cursor 分页 |
 | DELETE | `/api/v1/labels/history/{id}` | 删除历史记录 |
@@ -107,6 +107,13 @@ pnpm install && pnpm dev
 | GET  | `/api/v1/batches` | 批次列表，游标分页 |
 | GET  | `/api/v1/batches/{id}` | 批次详情 + 标签游标分页 |
 | DELETE | `/api/v1/batches/{id}` | 删除批次（CASCADE 删除所有子记录） |
+| GET/POST | `/api/v1/templates` | 用户模板列表 / 创建 |
+| GET/PUT/DELETE | `/api/v1/templates/{id}` | 用户模板详情 / 更新 / 删除 |
+| GET  | `/api/v1/system/hidden-templates` | 被隐藏的系统模板 ID 列表（公开） |
+| PUT  | `/api/v1/system/hidden-templates?user_id=N` | 更新隐藏列表（管理员） |
+| GET  | `/api/v1/system/template-overrides` | 系统模板画布覆写映射（公开） |
+| PUT  | `/api/v1/system/template-override/{sys_id}?user_id=N` | 管理员保存系统模板画布覆写 |
+| DELETE | `/api/v1/system/template-override/{sys_id}?user_id=N` | 管理员恢复系统模板出厂默认 |
 | GET  | `/api/v1/health` | 健康检查 |
 
 ---
@@ -120,6 +127,8 @@ pnpm install && pnpm dev
 - **历史统一**：首页与历史台账页共享 `<HistoryTabs>` 组件，双 Tab 展示批次总览与全部明细
 - **历史缓存**：TanStack Query，staleTime 30 秒，翻页不闪烁
 - **数据库迁移**：新增表/列必须通过 `alembic/versions/` 迁移文件操作，不可直接改 `models.py` 后重启
+- **系统模板**：三套硬编码出厂默认（`lib/systemTemplates.ts`），管理员可在编辑器中直接编辑本体，覆写持久化至 `system_config` 表（JSONB），通过 `applyOverrides()` 合并后对所有用户生效
+- **角色权限**：`User.role`（`operator` / `admin`），登录响应含 `role`，前端 `isAdmin(user)` 控制 UI 可见性
 
 ---
 
@@ -232,5 +241,6 @@ docker compose -f docker-compose.prod.yml down -v
 ## 源码导读
 
 - [Docs/SOURCE_MAP.md](Docs/SOURCE_MAP.md) — 调用链速查
+- [Docs/更新日志v3.6.md](Docs/更新日志v3.6.md) — v3.6 模板管理、管理员权限、系统模板覆写
 - [Docs/更新日志v3.0.md](Docs/更新日志v3.0.md) — v3.0 批量打码架构与变更详情
 - [Docs/更新日志v2.0.md](Docs/更新日志v2.0.md) — v2.0 架构决策与变更详情

@@ -92,5 +92,6 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     user_id: int
     username: str
+    role: str
     message: str
 

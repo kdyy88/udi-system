@@ -31,5 +31,6 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)) -> Lo
     return LoginResponse(
         user_id=user.id,
         username=user.username,
+        role=user.role,
         message="login success",
     )

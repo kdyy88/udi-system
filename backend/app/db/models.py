@@ -1,9 +1,20 @@
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
+
+
+class SystemConfig(Base):
+    """Single-row-per-key store for global application settings."""
+    __tablename__ = "system_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    value: Mapped[Any] = mapped_column(JSONB, default=None)
 
 
 class LabelBatch(Base):
@@ -23,6 +34,24 @@ class LabelBatch(Base):
 
     labels: Mapped[list["LabelHistory"]] = relationship(
         "LabelHistory", back_populates="batch", passive_deletes=True
+    )
+
+
+class LabelTemplate(Base):
+    __tablename__ = "label_template"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    canvas_width_px: Mapped[float] = mapped_column(Numeric(8, 2), default=378.0)
+    canvas_height_px: Mapped[float] = mapped_column(Numeric(8, 2), default=227.0)
+    canvas_json: Mapped[list[Any]] = mapped_column(JSONB, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
 
 
