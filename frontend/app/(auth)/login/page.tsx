@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -12,8 +13,8 @@ import type { LoginResponse } from "@/types/udi";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("demo");
-  const [password, setPassword] = useState("demo123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -34,12 +35,18 @@ export default function LoginPage() {
       setAuthUser({
         user_id: response.data.user_id,
         username: response.data.username,
+        email: response.data.email,
         role: response.data.role ?? "operator",
       });
       toast.success("登录成功");
       router.replace("/");
-    } catch {
-      toast.error("用户名或密码错误");
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 403) {
+        toast.error("邮箱尚未验证，请查收激活邮件后再登录", { duration: 6000 });
+      } else {
+        toast.error("用户名或密码错误");
+      }
     } finally {
       setLoading(false);
     }
@@ -81,8 +88,17 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-4 text-xs text-muted-foreground">
-          演示账号：demo / demo123，admin / admin123456
+          演示账号：demo / demo123
         </p>
+
+        <div className="mt-3 flex justify-between text-sm">
+          <Link href="/register" className="text-primary hover:underline">
+            注册新账号
+          </Link>
+          <Link href="/forgot-password" className="text-muted-foreground hover:underline">
+            忘记密码？
+          </Link>
+        </div>
       </section>
     </main>
   );

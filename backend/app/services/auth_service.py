@@ -8,8 +8,8 @@ from app.db.models import User
 
 
 DEFAULT_USERS = (
-    {"username": "demo", "password": "demo123", "role": "operator"},
-    {"username": "admin", "password": "admin123456", "role": "admin"},
+    {"username": "demo",  "email": "demo@system.local",  "password": "demo123",     "role": "operator"},
+    {"username": "admin", "email": "admin@system.local", "password": "admin123456", "role": "admin"},
 )
 
 
@@ -34,8 +34,12 @@ async def seed_default_users(db: AsyncSession) -> None:
             db.add(
                 User(
                     username=item["username"],
+                    email=item["email"],
                     hashed_password=hash_password(item["password"]),
                     role=item["role"],
+                    is_active=True,
+                    is_verified=True,   # pre-seeded system accounts are trusted, no email needed
+                    is_superuser=False,
                 )
             )
     await db.commit()

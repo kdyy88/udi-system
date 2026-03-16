@@ -20,12 +20,10 @@ type CursorHistory = {
 };
 
 async function fetchBatches(
-  userId: number,
   cursor: number | null | undefined,
   pageSize: number,
 ): Promise<LabelBatchListResponse> {
   const params: Record<string, string> = {
-    user_id: String(userId),
     page_size: String(pageSize),
   };
   if (cursor != null) params.cursor = String(cursor);
@@ -44,7 +42,7 @@ export function useLabelBatches(authUser: AuthUser | null) {
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["batches", authUser?.user_id, currentCursor, PAGE_SIZE],
-    queryFn: () => fetchBatches(authUser!.user_id, currentCursor, PAGE_SIZE),
+    queryFn: () => fetchBatches(currentCursor, PAGE_SIZE),
     enabled: authUser !== null,
     staleTime: 30_000,
   });

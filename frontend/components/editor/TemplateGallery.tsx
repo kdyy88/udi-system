@@ -19,7 +19,6 @@ import { cn } from "@/lib/utils";
 type Mode = "manage" | "select";
 
 type Props = {
-  userId: number;
   mode: Mode;
   /** Whether the current user is an admin (may edit/hide system templates). */
   isAdmin?: boolean;
@@ -31,7 +30,6 @@ type Props = {
 };
 
 export function TemplateGallery({
-  userId,
   mode,
   isAdmin = false,
   selectedId,
@@ -39,15 +37,15 @@ export function TemplateGallery({
   canPreview = false,
   onPreview,
 }: Props) {
-  const { data, isLoading } = useListTemplates(userId);
+  const { data, isLoading } = useListTemplates();
   const deleteMut = useDeleteTemplate();
 
   const { data: hiddenData } = useHiddenSystemTemplates();
-  const setHiddenMut = useSetHiddenSystemTemplates(userId);
+  const setHiddenMut = useSetHiddenSystemTemplates();
   const hiddenIds: string[] = hiddenData?.value ?? [];
 
   const { data: overridesData } = useSystemTemplateOverrides();
-  const deleteOverrideMut = useDeleteSystemTemplateOverride(userId);
+  const deleteOverrideMut = useDeleteSystemTemplateOverride();
   const overrides = overridesData?.value ?? {};
   const effectiveSystemTemplates = applyOverrides(overrides);
 
@@ -257,7 +255,7 @@ export function TemplateGallery({
                       onClick={(e) => {
                         e.stopPropagation();
                         if (confirm(`删除模板「${tmpl.name}」？此操作不可恢复`)) {
-                          deleteMut.mutate({ id: tmpl.id, userId });
+                          deleteMut.mutate({ id: tmpl.id });
                         }
                       }}
                     >

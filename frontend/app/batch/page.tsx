@@ -155,7 +155,7 @@ export default function BatchPage() {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const { phase, rows, errorMsg, progress, batchId, handleFileSelect, startGenerate, reset } =
-    useBatchUpload(authUser?.user_id ?? 0);
+    useBatchUpload();
 
   if (checkingAuth || !authUser) {
     return <main className="p-6 text-sm text-muted-foreground">正在检查登录状态…</main>;
@@ -231,7 +231,6 @@ export default function BatchPage() {
             <h2 className="font-medium">选择标签模板</h2>
             {authUser && (
               <TemplateGallery
-                userId={authUser.user_id}
                 mode="select"
                 selectedId={selectedTemplateId}
                 canPreview={Boolean(previewRow)}

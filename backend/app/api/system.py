@@ -1,7 +1,7 @@
 """System-wide configuration endpoints.
 
 GET  /system/hidden-templates               → public; returns list of hidden system-template IDs
-PUT  /system/hidden-templates?user_id=      → admin only; replaces the hidden-ID list
+PUT  /system/hidden-templates               → admin only; replaces the hidden-ID list
 
 GET  /system/template-overrides             → public; returns canvas overrides keyed by sys template ID
 PUT  /system/template-override/{sys_id}     → admin only; upsert a canvas override for one system template
@@ -11,14 +11,15 @@ import logging
 from time import perf_counter
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.api.helpers import log_request_timing, require_admin
-from app.db.models import SystemConfig
+from app.api.helpers import log_request_timing
+from app.db.fastapi_users_config import current_admin_user
+from app.db.models import SystemConfig, User
 from app.db.session import get_db
 
 router = APIRouter(prefix="/system")
@@ -57,11 +58,10 @@ async def get_hidden_templates(db: AsyncSession = Depends(get_db)) -> HiddenTemp
 @router.put("/hidden-templates", response_model=HiddenTemplatesResponse)
 async def set_hidden_templates(
     payload: HiddenTemplatesRequest,
-    user_id: int = Query(..., description="Requesting user ID"),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_admin_user),
 ) -> HiddenTemplatesResponse:
     started_at = perf_counter()
-    await require_admin(user_id, db)
     row = await _get_or_create_config(db, _KEY, [])
     row.value = payload.value
     flag_modified(row, "value")
@@ -100,11 +100,10 @@ async def get_template_overrides(db: AsyncSession = Depends(get_db)) -> Template
 async def set_template_override(
     sys_id: str,
     payload: TemplateOverrideRequest,
-    user_id: int = Query(..., description="Requesting user ID"),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_admin_user),
 ) -> TemplateOverridesResponse:
     started_at = perf_counter()
-    await require_admin(user_id, db)
     row = await _get_or_create_config(db, _OVERRIDES_KEY, {})
     overrides: dict[str, Any] = dict(row.value or {})
     overrides[sys_id] = payload.model_dump()
@@ -119,11 +118,10 @@ async def set_template_override(
 @router.delete("/template-override/{sys_id}", response_model=TemplateOverridesResponse)
 async def delete_template_override(
     sys_id: str,
-    user_id: int = Query(..., description="Requesting user ID"),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_admin_user),
 ) -> TemplateOverridesResponse:
     started_at = perf_counter()
-    await require_admin(user_id, db)
     row = await _get_or_create_config(db, _OVERRIDES_KEY, {})
     overrides: dict[str, Any] = dict(row.value or {})
     overrides.pop(sys_id, None)

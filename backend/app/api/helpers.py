@@ -32,6 +32,7 @@ async def get_user_or_404(user_id: int, db: AsyncSession) -> User:
 
 
 async def require_admin(user_id: int, db: AsyncSession) -> User:
+    """Legacy helper — kept for any callers not yet migrated to current_admin_user dep."""
     user = await get_user_or_404(user_id, db)
     if user.role != "admin":
         raise HTTPException(

@@ -45,7 +45,7 @@ export function PreviewDialog({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
   const authUser = getAuthUser();
-  const { data: templateList } = useListTemplates(authUser?.user_id ?? 0);
+  const { data: templateList } = useListTemplates();
   const templates = templateList?.items ?? [];
 
   const { data: overridesData } = useSystemTemplateOverrides();
@@ -114,7 +114,7 @@ export function PreviewDialog({
       if (!user) { toast.error("请先登录"); return; }
       setSaving(true);
       try {
-        await saveLabelToBackend(previewSource.data, user.user_id);
+        await saveLabelToBackend(previewSource.data);
         toast.success("已保存至历史记录");
         onSaved?.();
       } catch {

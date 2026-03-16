@@ -28,7 +28,6 @@ export default function EditEditorPage({ params }: { params: Promise<{ id: strin
 
   const { data: tmpl, isLoading } = useGetTemplate(
     templateId,
-    authUser?.user_id ?? 0,
   );
 
   // Load template into canvas store once
@@ -51,7 +50,6 @@ export default function EditEditorPage({ params }: { params: Promise<{ id: strin
     try {
       await updateTemplate.mutateAsync({
         id: templateId,
-        userId: authUser.user_id,
         name: templateName.trim() || tmpl.name,
         canvas: canvasDef(),
       });

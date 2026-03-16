@@ -38,7 +38,15 @@
 - [frontend/app/history/batch/[id]/page.tsx](frontend/app/history/batch/[id]/page.tsx)
   - 批次详情页：分页展示批次内所有标签 + "重新下载 ZIP" 按钮。
 - [frontend/app/(auth)/login/page.tsx](frontend/app/(auth)/login/page.tsx)
-  - 登录页。
+  - 登录页；含"注册新账号"和"忘记密码"跳转链接。
+- [frontend/app/(auth)/register/page.tsx](frontend/app/(auth)/register/page.tsx)（v3.8 新增）
+  - 邮箱 + 用户名 + 密码注册；成功后展示"请查收验证邮件"提示。
+- [frontend/app/(auth)/verify-email/page.tsx](frontend/app/(auth)/verify-email/page.tsx)（v3.8 新增）
+  - 读取 URL `?token=` 自动调用 `/auth/verify` 完成账号激活。
+- [frontend/app/(auth)/forgot-password/page.tsx](frontend/app/(auth)/forgot-password/page.tsx)（v3.8 新增）
+  - 输入邮箱触发密码重置邮件。
+- [frontend/app/(auth)/reset-password/page.tsx](frontend/app/(auth)/reset-password/page.tsx)（v3.8 新增）
+  - 读取 URL `?token=` + 输入新密码完成重置。
 - [frontend/app/editor/page.tsx](frontend/app/editor/page.tsx)（v3.5 新增，v3.6 扩展）
   - 新建模板编辑器（`/editor`），zoom 滑块（0.3–2.0）。
   - v3.6：支持 `?seed=sys-xxx` 预加载系统模板画布。管理员访问时进入直接编辑模式，顶栏呈现“更新系统模板”（主） + “另存为个人模板”（次）双按钮。
@@ -57,40 +65,46 @@
   - 聚合所有子路由（auth / labels / batches / templates）。
 - [backend/app/api/helpers.py](backend/app/api/helpers.py)
   - 路由公共 helper：`log_request_timing()`、`get_user_or_404()`、`require_admin()`、`get_owned_record_or_404()`、`to_label_history_response()`。
-- [backend/app/api/auth.py](backend/app/api/auth.py)
-  - 登录接口：用户名密码校验（async）；响应包含 `role` 字段。
-- [backend/app/api/system.py](backend/app/api/system.py)（v3.6 新增）
-  - 系统配置端点（`/system` 前缀）：
-    - `GET/PUT /system/hidden-templates`：读取/更新被隐藏的系统模板 ID 列表。
-    - `GET /system/template-overrides`：公开，返回所有画布覆写映射。
-    - `PUT/DELETE /system/template-override/{sys_id}`：管理员保存覆写 / 恢复出厂默认。
-  - 所有写操作通过 `helpers.require_admin()` 校验管理员身份（非管理员 → 403）。
-- [backend/app/api/labels.py](backend/app/api/labels.py)
-  - 生成（保存元数据，同时自动创建 `source="form"` 的单条 LabelBatch）、历史查询（cursor 分页）、历史明细、删除。
-  - 复用 `helpers.py` 处理 user 校验、owned-record 校验和 `LabelHistoryResponse` 序列化。
-- [backend/app/api/batches.py](backend/app/api/batches.py)
-  - 批量接口：`POST /generate`（单事务建批+批量写 label_history，并保存 `template_definition` 快照）、`GET /batches`（游标分页列表）、`GET /batches/{id}`（详情+标签分页）、`DELETE /batches/{id}`（级联删除）。
-  - v3.6.1：批次详情分页修复为升序读取 + `id > cursor`，与 ZIP 导出顺序一致。
-- [backend/app/api/templates.py](backend/app/api/templates.py)（v3.5 新增）
-  - 模板 CRUD：`GET/POST /api/v1/templates?user_id=…`、`GET/PUT/DELETE /api/v1/templates/{id}?user_id=…`。
-  - 所有操作通过 `helpers.get_owned_record_or_404()` 校验归属（非本人 → 403）。
+- [backend/app/api/auth.py](backend/app/api/auth.py)（v3.8 重写）
+  - 挂载全套 fastapi-users 路由：`POST /auth/jwt/login`|`logout`、`/auth/register`、`/auth/forgot-password`、`/auth/reset-password`、`/auth/request-verify-token`、`/auth/verify`、`GET /auth/users/me`。
+  - 兼容旧前端的 `POST /auth/login`（JSON 格式），成功后签发 Cookie 并返回 `{user_id, username, email, role}`。
+- [backend/app/api/system.py](backend/app/api/system.py)（v3.6 新增，v3.8 改造）
+  - 系统配置端点（`/system` 前缀）：`GET/PUT /system/hidden-templates`、`GET /system/template-overrides`、`PUT/DELETE /system/template-override/{sys_id}`。
+  - 所有写操作改为 `Depends(current_admin_user)` 校验，不再依赖 `user_id` 查询参数。
+- [backend/app/api/labels.py](backend/app/api/labels.py)（v3.8 改造）
+  - 生成、历史查询（cursor 分页）、历史明细、删除。
+  - 所有端点移除 `user_id: Query` 参数，改由 `Depends(current_active_user)` 从 JWT Cookie 提取身份。
+- [backend/app/api/batches.py](backend/app/api/batches.py)（v3.8 改造）
+  - 批量接口：`POST /generate`（单事务建批+批量写 label_history，保存 `template_definition` 快照）、`GET /batches`（游标分页）、`GET /batches/{id}`（详情+标签分页）、`DELETE /batches/{id}`（级联删除）。
+  - 全部改为 `Depends(current_active_user)`。
+- [backend/app/api/templates.py](backend/app/api/templates.py)（v3.5 新增，v3.8 改造）
+  - 模板 CRUD：`GET/POST /api/v1/templates`、`GET/PUT/DELETE /api/v1/templates/{id}`。
+  - 全部改为 `Depends(current_active_user)`，移除 `user_id` 查询参数。
 
 ### 数据模型层（DB）
 
 - [backend/app/db/session.py](backend/app/db/session.py)
   - async engine（asyncpg / PostgreSQL）、`AsyncSessionLocal`、`get_db()` 依赖注入。
-- [backend/app/db/models.py](backend/app/db/models.py)
-  - 表结构：`User`（含 `role` 列）、`LabelBatch`（含 `template_definition JSONB` 快照）、`LabelHistory`（含 `batch_id` FK + CASCADE）、`LabelTemplate`（v3.5，含 `canvas_json JSONB`）、`SystemConfig`（v3.6，`key VARCHAR(100) UNIQUE` + `value JSONB`）。
+- [backend/app/db/models.py](backend/app/db/models.py)（v3.8 更新）
+  - 表结构：`User`（继承 `SQLAlchemyBaseUserTable[int]`，新增 `email`、`is_active`、`is_verified`、`is_superuser`）、`LabelBatch`（含 `template_definition JSONB` 快照）、`LabelHistory`（含 `batch_id` FK + CASCADE）、`LabelTemplate`（v3.5）、`SystemConfig`（v3.6）。
+- [backend/app/db/user_manager.py](backend/app/db/user_manager.py)（v3.8 新增）
+  - 自定义 `UserManager`：SHA-256 旧密码向 bcrypt 懒迁移；注册后自动触发验证邮件；密码重置钩子。
+- [backend/app/db/fastapi_users_config.py](backend/app/db/fastapi_users_config.py)（v3.8 新增）
+  - `CookieTransport`（Cookie 名 `udi_auth`，HttpOnly）+ `JWTStrategy`（7 天）组成 `auth_backend`。
+  - 导出 `current_active_user`、`current_admin_user` FastAPI 依赖项。
+- [backend/app/db/redis.py](backend/app/db/redis.py)（v3.8 新增）
+  - 异步 Redis 连接池；`get_redis()` FastAPI 依赖。
+  - Redis 不可达时优雅降级（warning，服务正常启动）；`check_and_record_send()` 提供 OTP 冷却 + 每日配额限流。
 - [backend/alembic/](backend/alembic/)
-  - `0001` 初始全量建表；`0002` 新增 `label_batch`；`0003` 创建 `label_template`（v3.5）；`0004` 创建 `system_config` 并种入初始行（v3.6）；`0005` 为 `label_batch` 增加 `template_definition` 快照（v3.6.1）。
+  - `0001` 初始全量建表；`0002` 新增 `label_batch`；`0003` 创建 `label_template`（v3.5）；`0004` 创建 `system_config`（v3.6）；`0005` 为 `label_batch` 增加 `template_definition` 快照（v3.6.1）；`0006` 新增 User 认证字段及 email 唯一索引（v3.8）。
 
 ### 数据校验层（Schema）
 
-- [backend/app/schemas/label.py](backend/app/schemas/label.py)
+- [backend/app/schemas/label.py](backend/app/schemas/label.py)（v3.8 更新）
   - 请求/响应模型（生成、历史分页、历史明细）。
-  - `LabelHistoryResponse` 含 `batch_id` 可空字段。
-- [backend/app/schemas/batch.py](backend/app/schemas/batch.py)
-  - 批量接口的请求/响应模型：`BatchCreateRequest`（最多 500 行）、`BatchCreateResponse`、`LabelBatchSummary`、`LabelBatchListResponse`、`LabelBatchDetailResponse`。
+  - `LabelCreateRequest` 移除 `user_id` 字段；新增 `LegacyLoginRequest` / `LegacyLoginResponse`（含 `email`）。
+- [backend/app/schemas/batch.py](backend/app/schemas/batch.py)（v3.8 更新）
+  - `BatchCreateRequest` 移除 `user_id` 字段；其余同原（最多 500 行、`template_definition` 快照等）。
 - [backend/app/schemas/template.py](backend/app/schemas/template.py)（v3.5 新增）
   - `TemplateCreate`、`TemplateUpdate`、`TemplateRead`、`TemplateListResponse`。
 
@@ -103,7 +117,17 @@
   - DataMatrix / GS1-128 图像生成（treepoem/Ghostscript）。
   - **v2.0 起不再被 API 层调用**；模块保留供独立工具使用。
 - [backend/app/services/auth_service.py](backend/app/services/auth_service.py)
-  - 密码哈希/校验、默认用户初始化（async）。
+  - 默认用户初始化（`seed_default_users`，含 `email`、`is_verified` 字段，v3.8 更新）。
+- [backend/app/services/email_service.py](backend/app/services/email_service.py)（v3.8 新增）
+  - 基于 **Resend SDK v2**（`Resend(key).emails.send()`）。
+  - `send_verification_email(to, token)` / `send_reset_email(to, token)`。
+  - `RESEND_API_KEY` 为空时进入开发模式，链接打印到日志，不发送真实邮件。
+
+### 配置层
+
+- [backend/app/core/config.py](backend/app/core/config.py)（v3.8 更新）
+  - 新增 `REDIS_URL`、`JWT_SECRET`、`JWT_LIFETIME_SECONDS`、`RESEND_API_KEY`、`RESEND_FROM_EMAIL`、`FRONTEND_URL`。
+  - 集成 `python-dotenv`：本地 `uv run uvicorn` 启动时自动从项目根目录 `.env` 加载变量，无需手动 export。
 
 ---
 
@@ -126,22 +150,23 @@
 
 - [frontend/hooks/useLabels.ts](frontend/hooks/useLabels.ts)
   - `handlePreviewLocally(formData)` — 同步构建 GS1，设置 `previewSource`，无网络请求。
-- [frontend/hooks/useLabelHistory.ts](frontend/hooks/useLabelHistory.ts)
+- [frontend/hooks/useLabelHistory.ts](frontend/hooks/useLabelHistory.ts)（v3.8 改造）
   - 基于 TanStack Query 的历史列表管理（cursor 分页、30s 缓存、删除后精确失效）。
-- [frontend/hooks/useLabelBatches.ts](frontend/hooks/useLabelBatches.ts)
-  - 基于 TanStack Query 的批次列表管理（cursor 分页）；供历史页“批次总览” Tab 使用。
-- [frontend/hooks/useBatchUpload.ts](frontend/hooks/useBatchUpload.ts)
+  - 移除 `userId` 参数，依赖 Cookie 鉴权。
+- [frontend/hooks/useLabelBatches.ts](frontend/hooks/useLabelBatches.ts)（v3.8 改造）
+  - 基于 TanStack Query 的批次列表管理（cursor 分页）；移除 `userId` 参数。
+- [frontend/hooks/useBatchUpload.ts](frontend/hooks/useBatchUpload.ts)（v3.8 改造）
   - 批量上传状态机（6 阶段）：`idle → parsing → validated → saving → generating → done | error`。
-  - 调用 `parseExcelFile` 解析、`api.post` 保存、`exportBatchToZip` 生成 SVG ZIP。
-  - v3.6.1：保存时一并提交 `template_definition`，供批次历史重下载复用原模板。
+  - 移除 `userId` 参数；保存时提交 `template_definition` 供批次历史重下载复用原模板。
 - [frontend/hooks/useRequireAuth.ts](frontend/hooks/useRequireAuth.ts)（v3.6.1 新增）
   - 页面级认证守卫：基于 `useSyncExternalStore` 订阅本地登录态，未登录跳转 `/login`、统一 `logout()`。
-- [frontend/hooks/useLabelTemplates.ts](frontend/hooks/useLabelTemplates.ts)（v3.5 新增）
-  - 基于 TanStack Query 的模板 CRUD：`useListTemplates`、`useGetTemplate`、`useCreateTemplate`、`useUpdateTemplate`、`useDeleteTemplate`。
-- [frontend/hooks/useHiddenSystemTemplates.ts](frontend/hooks/useHiddenSystemTemplates.ts)（v3.6 新增）
-  - `useHiddenSystemTemplates()` 查询隐藏列表；`useSetHiddenSystemTemplates(userId)` Mutation。
-- [frontend/hooks/useSystemTemplateOverrides.ts](frontend/hooks/useSystemTemplateOverrides.ts)（v3.6 新增）
-  - `useSystemTemplateOverrides()` 查询画布覆写；`useSaveSystemTemplateOverride(userId)` / `useDeleteSystemTemplateOverride(userId)` Mutation。
+- [frontend/hooks/useLabelTemplates.ts](frontend/hooks/useLabelTemplates.ts)（v3.5 新增，v3.8 改造）
+  - 基于 TanStack Query 的模板 CRUD：`useListTemplates()`、`useGetTemplate(id)`、`useCreateTemplate`、`useUpdateTemplate`、`useDeleteTemplate`。
+  - v3.8：移除所有 `userId` 参数，依赖 Cookie 鉴权。
+- [frontend/hooks/useHiddenSystemTemplates.ts](frontend/hooks/useHiddenSystemTemplates.ts)（v3.6 新增，v3.8 改造）
+  - `useHiddenSystemTemplates()` 查询隐藏列表；`useSetHiddenSystemTemplates()` Mutation（移除 `userId` 参数）。
+- [frontend/hooks/useSystemTemplateOverrides.ts](frontend/hooks/useSystemTemplateOverrides.ts)（v3.6 新增，v3.8 改造）
+  - `useSystemTemplateOverrides()` 查询画布覆写；`useSaveSystemTemplateOverride()` / `useDeleteSystemTemplateOverride()` Mutation（移除 `userId` 参数）。
 ### 组件层
 - [frontend/components/shared/Navbar.tsx](frontend/components/shared/Navbar.tsx)
   - 全局导航栏（标签生成 / 批量打码 / 历史台账 / 模板编辑器）；挂载于 `layout.tsx`。
@@ -166,10 +191,10 @@
   - 左侧边栏：画布尺寸 mm 输入、添加元素按钮、撤销/重做/删除。
 - [frontend/components/editor/PropertiesPanel.tsx](frontend/components/editor/PropertiesPanel.tsx)（v3.5 新增）
   - 右侧属性面板：位置/尺寸（mm 显示）、类型专属属性面板、GS1 AI 字段绑定下拉选择器。
-- [frontend/components/editor/TemplateGallery.tsx](frontend/components/editor/TemplateGallery.tsx)（v3.5 新增，v3.6 重写）
+- [frontend/components/editor/TemplateGallery.tsx](frontend/components/editor/TemplateGallery.tsx)（v3.5 新增，v3.6 重写，v3.8 改造）
   - 模板卡片网格；`mode="manage"` 显示编辑/删除操作；`mode="select"` 调用 `onSelect(definition, id, name)` 回调。
-  - 当前为折叠式两分区（系统默认 / 我的模板）；`isAdmin` 控制系统模板编辑 / 恢复出厂 / 隐藏切换；`applyOverrides()` 展现最新系统模板。
-  - 选择态支持模板卡片悬浮预览入口。
+  - v3.8：移除 `userId` prop，所有内部 hook 调用均不传 userId。
+  - `isAdmin` 控制系统模板编辑 / 恢复出厂 / 隐藏切换；`applyOverrides()` 展现最新系统模板。
 - [frontend/components/editor/TemplatePreviewDialog.tsx](frontend/components/editor/TemplatePreviewDialog.tsx)
   - 批量打码页使用的精简模板预览弹窗；基于首条有效数据渲染当前模板的大图预览。
 - [frontend/components/ui](frontend/components/ui)
@@ -181,8 +206,8 @@
   - `useBwipPreview(hri)` — 同步 `useMemo`，调用 bwip-js 生成 4 路 SVG，含错误捕获。
 - [frontend/features/labels/preview/barcode-svg.ts](frontend/features/labels/preview/barcode-svg.ts)
   - `createDataMatrixSvg(hri)` / `createNormalizedGs1Svg(hri)` — bwip-js 包装函数。
-- [frontend/features/labels/preview/save.ts](frontend/features/labels/preview/save.ts)
-  - `saveLabelToBackend(preview, userId)` — 调用 `POST /generate`，唯一的后端写入触发点。
+- [frontend/features/labels/preview/save.ts](frontend/features/labels/preview/save.ts)（v3.8 更新）
+  - `saveLabelToBackend(preview)` — 调用 `POST /generate`，移除 `userId` 参数，依赖 Cookie 鉴权。
 - [frontend/features/labels/preview/export.ts](frontend/features/labels/preview/export.ts)
   - `exportPreviewNode(node, template, format)` — PNG / SVG / PDF 下载。
 
@@ -208,13 +233,14 @@
   - 旧三函数（`renderCompactSvg` / `renderDualSvg` / `renderDetailSvg`）已删除。
   - 新导出 `renderCustomSvg(input, canvas: CanvasDefinition): string`：遍历 `canvas.elements`，按类型分发渲染（barcode → bwip-js SVG；text → 解析 fieldBinding 填入 AI 值；rect → `<rect>`）。
   - v3.6 修复：`embedSvg` 改用嵌套 `<svg>` + `preserveAspectRatio="none"`，条码完全填满元素框，不留白边。
-- [frontend/lib/batchExporter.ts](frontend/lib/batchExporter.ts)
-  - 批量导出 `exportBatchToZip(options: BatchExportOptions)`：`templateDefinition: CanvasDefinition` 替代旧 `template: TemplateKey`。
-  - `fetchAllBatchLabels`：分页拉取批次内所有标签记录。
-- [frontend/lib/api.ts](frontend/lib/api.ts)
-  - Axios 实例。
-- [frontend/lib/auth.ts](frontend/lib/auth.ts)
+- [frontend/lib/batchExporter.ts](frontend/lib/batchExporter.ts)（v3.8 改造）
+  - `exportBatchToZip(options: BatchExportOptions)`：`templateDefinition: CanvasDefinition` 驱动 SVG 合图。
+  - `fetchAllBatchLabels(batchId)`：分页拉取批次内所有标签记录，移除 `userId` 参数，依赖 Cookie。
+- [frontend/lib/api.ts](frontend/lib/api.ts)（v3.8 更新）
+  - Axios 实例；新增 `withCredentials: true` 全局携带 Cookie，以及 401 响应拦截器（自动清除登录态并重定向至 `/login`）。
+- [frontend/lib/auth.ts](frontend/lib/auth.ts)（v3.8 更新）
   - 登录态存取与订阅（localStorage + 稳定快照缓存）；`isAdmin(user)` 工具函数。
+  - v3.8 新增 `initSession()`：调用 `GET /auth/users/me` 从 Cookie 刷新用户信息至 localStorage。
   - `AuthUser` 类型已收敛到 `types/udi.ts`，此处不再重复定义。
 - [frontend/lib/systemTemplates.ts](frontend/lib/systemTemplates.ts)（v3.6 新增）
   - 三套硬编码出厂系统模板（紧凑型/标准型/双码型），ID 前缀 `"sys-"`。
@@ -224,8 +250,8 @@
   - 已缩减为 `export type TemplateKey = never;`，仅保留兼容性存根，勿再引用。
 - [frontend/features/labels/api/routes.ts](frontend/features/labels/api/routes.ts)
   - API 路径常量：`LABELS_API_ROUTES` + `BATCHES_API_ROUTES`。
-- [frontend/types/udi.ts](frontend/types/udi.ts)
-  - 前端类型定义（`LabelHistoryItem` 含 `batch_id` 可空字段）。
+- [frontend/types/udi.ts](frontend/types/udi.ts)（v3.8 更新）
+  - 前端类型定义；`AuthUser` / `LoginResponse` 新增 `email` 字段；`LabelHistoryItem` 含 `batch_id` 可空字段。
 - [frontend/types/batch.ts](frontend/types/batch.ts)
   - 批量相关类型：`BatchTemplate = CanvasDefinition`（v3.5 起，不再是 `TemplateKey` 字符串别名）、`ParsedRow`、`BatchPhase`、`LabelBatchSummary` 等。
 - [frontend/types/template.ts](frontend/types/template.ts)（v3.5 新增）
@@ -236,13 +262,24 @@
 
 ## 4) 核心调用链（四条）
 
-### A. 登录链路
+### A. 登录链路（v3.8 更新）
 
 ```
 前端 login/page.tsx
-  → POST /api/v1/auth/login
-  → backend/api/auth.py → auth_service.py（校验密码）
-  → 返回 user_id，写入 lib/auth.ts（localStorage）
+  → POST /api/v1/auth/login  (JSON {username, password})
+  → backend/api/auth.py → user_manager.py:
+      UserManager.authenticate()：先按邮箱查找，再按用户名查找；SHA-256 旧密码懒迁移到 bcrypt
+  → 成功：JWTStrategy.write_token() → CookieTransport 写入 HTTP-only Cookie "udi_auth"
+  → 同时返回 {user_id, username, email, role} → 前端写入 localStorage（仅用于展示）
+
+session 重建（刷新页面 / SSR 首次渲染）
+  → lib/auth.ts: initSession()
+  → GET /api/v1/auth/users/me  （浏览器自动携带 Cookie）
+  → 成功 → 刷新 localStorage；失败（401）→ clearAuthUser()
+
+Cookie 过期 / 无效
+  → 任何 API 请求返回 401
+  → api.ts 401 拦截器 → clearAuthUser() + redirect("/login")
 ```
 
 ### B. 生成 + 预览链路（无网络，同步）
@@ -264,8 +301,9 @@
 用户点击"导出 PNG/SVG/PDF"
   → PreviewDialog.handleDownload(format)
   → if (previewSource.kind === "local")
-      → save.ts: saveLabelToBackend(data, userId)   [POST /api/v1/labels/generate]
-          → backend labels.py: 仅保存元数据，无条码渲染
+      → save.ts: saveLabelToBackend(data)            [POST /api/v1/labels/generate，Cookie 自动携带]
+          → backend labels.py: Depends(current_active_user) 从 JWT Cookie 提取 user_id
+          → 仅保存元数据，无条码渲染
       → onSaved?.() → useLabelHistory.invalidateHistory()
   → export.ts: exportPreviewNode(node, template, format)
 ```
@@ -275,10 +313,11 @@
 ```
 进入页面 / 翻页 / 筛选
   → useLabelHistory useQuery
-      queryKey: ["label-history", userId, cursor, gtin, batchNo]
+      queryKey: ["label-history", cursor, gtin, batchNo]
       → 缓存未过期 (staleTime 30s)：直接返回，0 网络请求
-      → 否则：GET /api/v1/labels/history?cursor=...
-          → backend: WHERE user_id=? [AND id < cursor] ORDER BY id DESC LIMIT N
+      → 否则：GET /api/v1/labels/history?cursor=...  （Cookie 自动携带）
+          → backend: Depends(current_active_user) 提取 user_id
+          → WHERE user_id=? [AND id < cursor] ORDER BY id DESC LIMIT N
           → 返回 items + next_cursor（null 表示末页）
   → DataTable 渲染；翻页时 keepPreviousData 防白屏
 
@@ -316,43 +355,34 @@
 ```
 历史页"批次总览" Tab
   → useLabelBatches useQuery
-      → GET /api/v1/batches?user_id=...&cursor=...
+      → GET /api/v1/batches?cursor=...  （Cookie 鉴权）
       → 展示 BatchListTable（游标分页）
   → 点击"详情" → 跳转 /history/batch/{id}
 
 批次详情页
-  → GET /api/v1/batches/{id}?user_id=...
+  → GET /api/v1/batches/{id}  （Cookie 鉴权）
   → 展示分页标签表格
   → 点击"重新下载 ZIP" → 优先使用批次保存时的 `template_definition` → exportBatchToZip()  [同批量打码链路 E]
 ```
 
-### G. 模板编辑器链路（v3.5 新增）
+### G. 模板编辑器链路（v3.5 新增，v3.8 改造）
 
 ```
 新建模板 → /editor
-  → ElementToolbar：添加元素 → canvasStore.addElement()
-               画布尺寸 mm 输入 → canvasStore.setDimensions()
-               撤销/重做       → canvasStore.temporal.undo()/.redo()
-  → Canvas（react-rnd）：
-      拖拽结束 → onDragStop  → canvasStore.updateElement(id, {x, y})
-      缩放结束 → onResizeStop → canvasStore.updateElement(id, {w, h, x, y})
-  → PropertiesPanel：字段绑定下拉 → canvasStore.updateElement(id, {fieldBinding: ai})
+  → ElementToolbar / Canvas（react-rnd）/ PropertiesPanel → canvasStore 操作（同 v3.5）
   → 用户点击"保存"
-      → useCreateTemplate.mutate({ name, canvas_json: elements, canvas_width_px, canvas_height_px })
-          → POST /api/v1/templates?user_id=...
+      → useCreateTemplate.mutate({ name, canvas_json, canvas_width_px, canvas_height_px })
+          → POST /api/v1/templates  （Cookie 鉴权，无 user_id 查询参数）
           → 成功 → router.push("/editor/{id}")
 
 编辑模板 → /editor/[id]
-  → useGetTemplate(id, userId) → GET /api/v1/templates/{id}?user_id=...
+  → useGetTemplate(id) → GET /api/v1/templates/{id}  （Cookie 鉴权）
   → recordToDefinition(tmpl) → canvasStore.loadCanvas(def)
-  → 编辑流程同上
-  → 保存 → useUpdateTemplate.mutate({ id, ... }) → PUT /api/v1/templates/{id}?user_id=...
+  → 保存 → useUpdateTemplate.mutate({ id, ... }) → PUT /api/v1/templates/{id}
 
-批量打码页选模板 → TemplateGallery mode="select"
-  → useListTemplates(userId) → GET /api/v1/templates?user_id=...
+批量打码页选模板 → TemplateGallery mode="select"（无 userId prop）
+  → useListTemplates() → GET /api/v1/templates  （Cookie 鉴权）
   → 点击卡片 → onSelect(recordToDefinition(record), id, name)
-      → setSelectedTemplate(def: CanvasDefinition)
-  → 点击卡片预览按钮 → TemplatePreviewDialog
   → 用户点击"保存并生成" → startGenerate(selectedTemplate)
       → exportBatchToZip({ templateDefinition: def, ... })
           → 逐条: renderCustomSvg(labelInput, def)  [svgTemplates.ts]
@@ -398,7 +428,11 @@
 | 改历史页双 Tab 展示 / 批次列表样式 | `frontend/components/labels/HistoryTabs.tsx` |
 | 改批次相关 API | `backend/app/api/batches.py` + `backend/app/schemas/batch.py` |
 | 改数据库表结构 | `backend/app/db/models.py` **+** 新增 Alembic 迁移文件（不可跳过迁移）<br>执行迁移：`cd backend && DATABASE_URL="postgresql+asyncpg://gs1user:gs1pass@localhost:5432/gs1udi" .venv/bin/alembic upgrade head` |
-| 改默认用户 / 认证逻辑 | `backend/app/services/auth_service.py` |
+| 改默认用户 / 用户初始化逻辑 | `backend/app/services/auth_service.py` |
+| 改认证策略（Cookie / JWT 有效期） | `backend/app/db/fastapi_users_config.py` |
+| 改邮件模板 / 发件服务 | `backend/app/services/email_service.py` |
+| 改 Redis 限流规则 | `backend/app/db/redis.py` |
+| 改环境变量 / 密钥 | `.env`（本地）/ `docker-compose.yml`（容器）/ `.env.prod.example`（生产参考）|
 | 改模板编辑器画布行为（拖拽/缩放/缩放比） | `frontend/stores/canvasStore.ts` + `frontend/components/editor/Canvas.tsx` |
 | 改模板编辑器属性面板 / 字段绑定选项 | `frontend/components/editor/PropertiesPanel.tsx` |
 | 改模板元素类型定义 | `frontend/types/template.ts`（**同时**更新 `canvasStore.ts` 工厂函数） |
@@ -413,8 +447,10 @@
 
 这个项目的核心就是：
 
-**单标签**：登录 → 输入 DI/PI → **前端** GS1 计算 + bwip-js 渲染 → 用户导出时保存元数据到后端 → PostgreSQL 持久化 → cursor 分页查询历史 → 前端重渲染预览。
+**单标签**：登录（HTTP-only JWT Cookie）→ 输入 DI/PI → **前端** GS1 计算 + bwip-js 渲染 → 用户导出时 Cookie 鉴权调用后端保存元数据 → PostgreSQL 持久化 → cursor 分页查询历史 → 前端重渲染预览。
 
-**批量打码**：上传 Excel → 客户端 Mod-10 校验 → 单事务写 LabelBatch + LabelHistory（后端权威重算 HRI）→ 客户端 bwip-js + `renderCustomSvg(CanvasDefinition)` 纯 SVG 合图 → JSZip 打包下载 → 批次历史台账。
+**批量打码**：上传 Excel → 客户端 Mod-10 校验 → Cookie 鉴权单事务写 LabelBatch + LabelHistory（后端权威重算 HRI）→ 客户端 bwip-js + `renderCustomSvg(CanvasDefinition)` 纯 SVG 合图 → JSZip 打包下载 → 批次历史台账。
 
-**模板编辑器（v3.5）**：拖拽画布（react-rnd）+ Zustand/zundo 状态管理 → GS1 AI 字段绑定 → POST/PUT `/api/v1/templates` 持久化 PostgreSQL JSONB → 批量打码页从模板库选取并驱动 `renderCustomSvg` SVG 导出。
+**模板编辑器（v3.5）**：拖拽画布（react-rnd）+ Zustand/zundo 状态管理 → GS1 AI 字段绑定 → Cookie 鉴权 POST/PUT `/api/v1/templates` 持久化 PostgreSQL JSONB → 批量打码页从模板库选取并驱动 `renderCustomSvg` SVG 导出。
+
+**认证体系（v3.8）**：fastapi-users + CookieTransport + JWTStrategy → HTTP-only Cookie `udi_auth` → 邮箱注册 + 验证 + 密码重置（Resend 发送邮件）→ 全部 API 端点依赖 `current_active_user` 从 Cookie 提取身份，不再接受 `user_id` 查询参数。

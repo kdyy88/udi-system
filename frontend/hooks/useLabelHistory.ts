@@ -17,14 +17,12 @@ import type { LabelHistoryListResponse } from "@/types/udi";
 const PAGE_SIZE = 10;
 
 async function fetchHistoryPage(
-  userId: number,
   cursor: number | null,
   gtin: string,
   batchNo: string
 ): Promise<LabelHistoryListResponse> {
   const { data } = await api.get<LabelHistoryListResponse>(LABELS_API_ROUTES.history, {
     params: {
-      user_id: userId,
       gtin: gtin || undefined,
       batch_no: batchNo || undefined,
       cursor: cursor ?? undefined,
@@ -49,7 +47,7 @@ export function useLabelHistory() {
 
   const { data, isFetching } = useQuery({
     queryKey,
-    queryFn: () => fetchHistoryPage(authUser!.user_id, currentCursor, filterGtin, filterBatchNo),
+    queryFn: () => fetchHistoryPage(currentCursor, filterGtin, filterBatchNo),
     enabled: !!authUser,
     staleTime: 30_000,
     placeholderData: keepPreviousData,
@@ -57,9 +55,7 @@ export function useLabelHistory() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
-      api.delete(LABELS_API_ROUTES.historyById(id), {
-        params: { user_id: authUser?.user_id },
-      }),
+      api.delete(LABELS_API_ROUTES.historyById(id)),
     onSuccess: () => {
       toast.success("删除成功");
       void queryClient.invalidateQueries({

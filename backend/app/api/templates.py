@@ -1,14 +1,14 @@
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import Annotated
 import logging
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.helpers import get_owned_record_or_404, log_request_timing
-from app.db.models import LabelTemplate
+from app.db.fastapi_users_config import current_active_user
+from app.db.models import LabelTemplate, User
 from app.db.session import get_db
 from app.schemas.template import TemplateCreate, TemplateListResponse, TemplateRead, TemplateUpdate
 
@@ -18,25 +18,25 @@ logger = logging.getLogger(__name__)
 
 @router.get("", response_model=TemplateListResponse)
 async def list_templates(
-    user_id: Annotated[int, Query(gt=0)],
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> TemplateListResponse:
     started_at = perf_counter()
 
     count_result = await db.execute(
-        select(func.count()).where(LabelTemplate.user_id == user_id)
+        select(func.count()).where(LabelTemplate.user_id == user.id)
     )
     total = count_result.scalar_one()
 
     stmt = (
         select(LabelTemplate)
-        .where(LabelTemplate.user_id == user_id)
+        .where(LabelTemplate.user_id == user.id)
         .order_by(LabelTemplate.id.desc())
     )
     result = await db.execute(stmt)
     rows = result.scalars().all()
 
-    log_request_timing(logger, "GET /templates", started_at, user_id=user_id, count=len(rows))
+    log_request_timing(logger, "GET /templates", started_at, user_id=user.id, count=len(rows))
     return TemplateListResponse(
         total=total,
         items=[TemplateRead.model_validate(r) for r in rows],
@@ -46,13 +46,13 @@ async def list_templates(
 @router.post("", response_model=TemplateRead, status_code=status.HTTP_201_CREATED)
 async def create_template(
     payload: TemplateCreate,
-    user_id: Annotated[int, Query(gt=0)],
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> TemplateRead:
     started_at = perf_counter()
 
     tmpl = LabelTemplate(
-        user_id=user_id,
+        user_id=user.id,
         name=payload.name,
         description=payload.description,
         canvas_width_px=payload.canvas_width_px,
@@ -72,10 +72,10 @@ async def create_template(
 @router.get("/{template_id}", response_model=TemplateRead)
 async def get_template(
     template_id: int,
-    user_id: Annotated[int, Query(gt=0)],
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> TemplateRead:
-    tmpl = await _get_owned(template_id, user_id, db)
+    tmpl = await _get_owned(template_id, user.id, db)
     return TemplateRead.model_validate(tmpl)
 
 
@@ -83,11 +83,11 @@ async def get_template(
 async def update_template(
     template_id: int,
     payload: TemplateUpdate,
-    user_id: Annotated[int, Query(gt=0)],
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> TemplateRead:
     started_at = perf_counter()
-    tmpl = await _get_owned(template_id, user_id, db)
+    tmpl = await _get_owned(template_id, user.id, db)
 
     if payload.name is not None:
         tmpl.name = payload.name
@@ -111,10 +111,10 @@ async def update_template(
 @router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_template(
     template_id: int,
-    user_id: Annotated[int, Query(gt=0)],
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> None:
-    tmpl = await _get_owned(template_id, user_id, db)
+    tmpl = await _get_owned(template_id, user.id, db)
     await db.delete(tmpl)
     await db.commit()
 

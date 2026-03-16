@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV !== "production";
+
 const nextConfig: NextConfig = {
   async rewrites() {
     const backendUrl =
@@ -11,6 +13,19 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+
+  // In dev, prevent the browser from caching Turbopack chunks.
+  // This stops stale-chunk errors after every dev-server restart.
+  ...(isDev && {
+    async headers() {
+      return [
+        {
+          source: "/_next/static/:path*",
+          headers: [{ key: "Cache-Control", value: "no-store" }],
+        },
+      ];
+    },
+  }),
 };
 
 export default nextConfig;

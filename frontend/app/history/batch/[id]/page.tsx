@@ -20,11 +20,9 @@ const PAGE_SIZE = 50;
 
 async function fetchBatchDetail(
   batchId: number,
-  userId: number,
   cursor: number | null,
 ): Promise<LabelBatchDetailResponse> {
   const params: Record<string, string> = {
-    user_id: String(userId),
     page_size: String(PAGE_SIZE),
   };
   if (cursor != null) params.cursor = String(cursor);
@@ -80,7 +78,7 @@ export default function BatchDetailPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["batch-detail", batchId, authUser?.user_id, cursor],
-    queryFn: () => fetchBatchDetail(batchId, authUser!.user_id, cursor),
+    queryFn: () => fetchBatchDetail(batchId, cursor),
     enabled: !!authUser && batchId > 0,
     staleTime: 60_000,
   });
@@ -94,7 +92,7 @@ export default function BatchDetailPage() {
       elements: [{ type: "barcode", id: "dm", x: 10, y: 10, w: 200, h: 200, barcodeType: "datamatrix" }],
     };
     try {
-      const labels = await fetchAllBatchLabels(batchId, authUser.user_id);
+      const labels = await fetchAllBatchLabels(batchId);
       const blob = await exportBatchToZip({
         batchId,
         batchName: data.name,

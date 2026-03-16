@@ -26,14 +26,12 @@ const FETCH_PAGE_SIZE = 200;
 
 export async function fetchAllBatchLabels(
   batchId: number,
-  userId: number,
 ): Promise<LabelHistoryItem[]> {
   const all: LabelHistoryItem[] = [];
   let cursor: number | undefined = undefined;
 
   while (true) {
     const params: Record<string, string> = {
-      user_id: String(userId),
       page_size: String(FETCH_PAGE_SIZE),
     };
     if (cursor != null) params.cursor = String(cursor);

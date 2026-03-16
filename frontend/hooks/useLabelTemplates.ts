@@ -6,28 +6,27 @@ const BASE = "/api/v1/templates";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export function useListTemplates(userId: number) {
+export function useListTemplates() {
   return useQuery<TemplateListResponse>({
-    queryKey: ["templates", userId],
+    queryKey: ["templates"],
     queryFn: () =>
-      api.get<TemplateListResponse>(BASE, { params: { user_id: userId } }).then((r) => r.data),
-    enabled: userId > 0,
+      api.get<TemplateListResponse>(BASE).then((r) => r.data),
+    enabled: true,
   });
 }
 
-export function useGetTemplate(id: number, userId: number) {
+export function useGetTemplate(id: number) {
   return useQuery<LabelTemplateRecord>({
     queryKey: ["template", id],
     queryFn: () =>
-      api.get<LabelTemplateRecord>(`${BASE}/${id}`, { params: { user_id: userId } }).then((r) => r.data),
-    enabled: id > 0 && userId > 0,
+      api.get<LabelTemplateRecord>(`${BASE}/${id}`).then((r) => r.data),
+    enabled: id > 0,
   });
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 type CreatePayload = {
-  userId: number;
   name: string;
   description?: string;
   canvas: CanvasDefinition;
@@ -36,10 +35,10 @@ type CreatePayload = {
 export function useCreateTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, name, description, canvas }: CreatePayload) =>
+    mutationFn: ({ name, description, canvas }: CreatePayload) =>
       api
         .post<LabelTemplateRecord>(
-          `${BASE}?user_id=${userId}`,
+          BASE,
           {
             name,
             description: description ?? null,
@@ -49,15 +48,14 @@ export function useCreateTemplate() {
           },
         )
         .then((r) => r.data),
-    onSuccess: (_data, vars) => {
-      void qc.invalidateQueries({ queryKey: ["templates", vars.userId] });
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["templates"] });
     },
   });
 }
 
 type UpdatePayload = {
   id: number;
-  userId: number;
   name?: string;
   description?: string;
   canvas?: CanvasDefinition;
@@ -66,9 +64,9 @@ type UpdatePayload = {
 export function useUpdateTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, userId, name, description, canvas }: UpdatePayload) =>
+    mutationFn: ({ id, name, description, canvas }: UpdatePayload) =>
       api
-        .put<LabelTemplateRecord>(`${BASE}/${id}?user_id=${userId}`, {
+        .put<LabelTemplateRecord>(`${BASE}/${id}`, {
           name,
           description,
           canvas_width_px: canvas?.widthPx,
@@ -78,7 +76,7 @@ export function useUpdateTemplate() {
         .then((r) => r.data),
     onSuccess: (data, vars) => {
       qc.setQueryData(["template", vars.id], data);
-      void qc.invalidateQueries({ queryKey: ["templates", vars.userId] });
+      void qc.invalidateQueries({ queryKey: ["templates"] });
     },
   });
 }
@@ -86,10 +84,10 @@ export function useUpdateTemplate() {
 export function useDeleteTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, userId }: { id: number; userId: number }) =>
-      api.delete(`${BASE}/${id}?user_id=${userId}`),
-    onSuccess: (_data, vars) => {
-      void qc.invalidateQueries({ queryKey: ["templates", vars.userId] });
+    mutationFn: ({ id }: { id: number }) =>
+      api.delete(`${BASE}/${id}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["templates"] });
     },
   });
 }

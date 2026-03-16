@@ -16,12 +16,12 @@ export function useHiddenSystemTemplates() {
 }
 
 /** Admin-only: replace the hidden-templates list. */
-export function useSetHiddenSystemTemplates(userId: number) {
+export function useSetHiddenSystemTemplates() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (newHiddenIds: string[]) =>
       api
-        .put<HiddenTemplatesResponse>(BASE, { value: newHiddenIds }, { params: { user_id: userId } })
+        .put<HiddenTemplatesResponse>(BASE, { value: newHiddenIds })
         .then((r) => r.data),
     onSuccess: (data) => {
       qc.setQueryData(QUERY_KEY, data);

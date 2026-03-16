@@ -19,7 +19,7 @@ export default function TemplatesPage() {
         description="管理系统默认模板和您的自定义模板"
         titleClassName="text-2xl font-semibold"
       />
-      <TemplateGallery userId={authUser.user_id} mode="manage" isAdmin={isAdmin(authUser)} />
+      <TemplateGallery mode="manage" isAdmin={isAdmin(authUser)} />
     </main>
   );
 }

@@ -160,9 +160,7 @@ export function HistoryTabs({ authUser }: { authUser: AuthUser }) {
 
   const deleteBatchMutation = useMutation({
     mutationFn: (batchId: number) =>
-      api.delete(BATCHES_API_ROUTES.batchById(batchId), {
-        params: { user_id: authUser.user_id },
-      }),
+      api.delete(BATCHES_API_ROUTES.batchById(batchId)),
     onSuccess: () => {
       toast.success("批次已删除");
       void queryClient.invalidateQueries({ queryKey: ["batches"] });

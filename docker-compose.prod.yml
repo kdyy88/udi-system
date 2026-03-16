@@ -22,13 +22,28 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-gs1user}:${POSTGRES_PASSWORD:-gs1pass}@postgres:5432/${POSTGRES_DB:-gs1udi}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      RESEND_API_KEY: ${RESEND_API_KEY:-""}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
+      FRONTEND_URL: ${FRONTEND_URL}
       CORS_ORIGINS: ${CORS_ORIGINS}
+      COOKIE_SECURE: "true"
       WORKERS: ${WORKERS:-4}
     ports:
       - "${BACKEND_PORT:-18000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
+
+  redis:
+    image: redis:7-alpine
+    container_name: gs1-udi-redis
+    restart: unless-stopped
+    volumes:
+      - redis_prod_data:/data
 
   frontend:
     build:
@@ -40,7 +55,8 @@ services:
     depends_on:
       - backend
     ports:
-      - "${FRONTEND_PORT:-3001}:3000"
+      - "${FRONTEND_PORT:-8080}:3000"
 
 volumes:
   postgres_prod_data:
+  redis_prod_data:

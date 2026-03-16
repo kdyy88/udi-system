@@ -9,11 +9,9 @@ import { LABELS_API_ROUTES } from "@/features/labels/api/routes";
 import type { LocalPreviewData, LabelSaveResponse } from "@/types/udi";
 
 export async function saveLabelToBackend(
-  preview: LocalPreviewData,
-  userId: number
+  preview: LocalPreviewData
 ): Promise<LabelSaveResponse> {
   const { data } = await api.post<LabelSaveResponse>(LABELS_API_ROUTES.generate, {
-    user_id: userId,
     di: preview.di,
     lot: preview.lot ?? null,
     expiry: preview.expiry ?? null,

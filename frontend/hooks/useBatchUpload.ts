@@ -34,7 +34,7 @@ const INITIAL_STATE: State = {
   fileName: "",
 };
 
-export function useBatchUpload(userId: number) {
+export function useBatchUpload() {
   const [state, setState] = useState<State>(INITIAL_STATE);
 
   const set = useCallback((patch: Partial<State>) => {
@@ -58,7 +58,7 @@ export function useBatchUpload(userId: number) {
   // ── 2. Save to backend then render via bwip-js ───────────────────────────
   const startGenerate = useCallback(
     async (templateDefinition: CanvasDefinition) => {
-      if (state.phase !== "validated" || userId === 0) return;
+      if (state.phase !== "validated") return;
 
       const validRows = state.rows.filter((r) => r.validationError === null);
       if (validRows.length === 0) {
@@ -72,7 +72,6 @@ export function useBatchUpload(userId: number) {
       const batchName = state.fileName.replace(/\.[^.]+$/, "") || "批量上传";
       try {
         const res = await api.post<BatchCreateResponse>(BATCHES_API_ROUTES.batchGenerate, {
-          user_id: userId,
           name: batchName,
           source: "excel",
           template_definition: templateDefinition,
@@ -98,7 +97,7 @@ export function useBatchUpload(userId: number) {
 
       try {
         // Fetch the backend-persisted records (authoritative HRI strings)
-        const labels = await fetchAllBatchLabels(batchId, userId);
+        const labels = await fetchAllBatchLabels(batchId);
 
         const blob = await exportBatchToZip({
           batchId,
@@ -115,7 +114,7 @@ export function useBatchUpload(userId: number) {
         set({ phase: "error", errorMsg: err instanceof Error ? err.message : "标签生成失败" });
       }
     },
-    [state.phase, state.rows, state.fileName, userId, set],
+    [state.phase, state.rows, state.fileName, set],
   );
 
   // ── 3. Reset ───────────────────────────────────────────────────────────────

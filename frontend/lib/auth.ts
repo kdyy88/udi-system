@@ -50,6 +50,32 @@ export function clearAuthUser(): void {
   window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
 }
 
+/**
+ * Re-validate the session by calling /api/v1/auth/users/me.
+ * On success, refreshes localStorage with the latest user data.
+ * On 401 (cookie expired / missing), clears auth state.
+ */
+export async function initSession(): Promise<AuthUser | null> {
+  try {
+    const res = await fetch("/api/v1/auth/users/me", { credentials: "include" });
+    if (!res.ok) {
+      clearAuthUser();
+      return null;
+    }
+    const me = await res.json() as { id: number; username?: string; email: string; role?: string };
+    const user: AuthUser = {
+      user_id: me.id,
+      username: me.username ?? me.email.split("@")[0],
+      email: me.email,
+      role: me.role ?? "operator",
+    };
+    setAuthUser(user);
+    return user;
+  } catch {
+    return getAuthUser();
+  }
+}
+
 export function subscribeAuthUser(onStoreChange: () => void): () => void {
   if (typeof window === "undefined") {
     return () => {};

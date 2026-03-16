@@ -13,7 +13,6 @@ class BatchTemplateDefinition(BaseModel):
 
 
 class BatchCreateRequest(BaseModel):
-    user_id: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=200)
     source: Literal["excel", "form"] = "excel"
     template_definition: BatchTemplateDefinition

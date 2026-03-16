@@ -9,11 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.helpers import (
     get_owned_record_or_404,
-    get_user_or_404,
     log_request_timing,
     to_label_history_response,
 )
-from app.db.models import LabelBatch, LabelHistory
+from app.db.fastapi_users_config import current_active_user
+from app.db.models import LabelBatch, LabelHistory, User
 from app.db.session import get_db
 from app.schemas.label import (
     LabelCreateRequest,
@@ -61,30 +61,28 @@ async def labels_ping() -> dict[str, str]:
 async def generate_label(
     payload: LabelCreateRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> LabelGenerateResponse:
     """Save UDI metadata to history. Called only when user explicitly exports a label."""
     started_at = perf_counter()
-
-    await get_user_or_404(payload.user_id, db)
 
     try:
         gs1_element_string, hri = _build_gs1_and_hri(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Auto-create a single-item batch so the record is traceable from batch history
     batch = LabelBatch(
-        user_id=payload.user_id,
+        user_id=user.id,
         name=f"单标签 {payload.di}",
         source="form",
         total_count=1,
         created_at=datetime.now(UTC),
     )
     db.add(batch)
-    await db.flush()  # obtain batch.id
+    await db.flush()
 
     history = LabelHistory(
-        user_id=payload.user_id,
+        user_id=user.id,
         batch_id=batch.id,
         gtin=payload.di,
         batch_no=payload.lot,
@@ -122,17 +120,17 @@ PAGE_SIZE = 10
 
 @router.get("/history", response_model=LabelHistoryListResponse)
 async def list_label_history(
-    user_id: int = Query(..., gt=0),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
     gtin: Annotated[str | None, Query(min_length=14, max_length=14)] = None,
     batch_no: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
     cursor: Annotated[int | None, Query(gt=0)] = None,
     page_size: Annotated[int, Query(ge=1, le=100)] = PAGE_SIZE,
 ) -> LabelHistoryListResponse:
-    """Cursor-based history list. Pass cursor=<last_id> to get the next page."""
+    """Cursor-based history list, scoped to authenticated user."""
     started_at = perf_counter()
+    user_id = user.id
 
-    # Base filter (shared by COUNT and data queries)
     base_filter = [LabelHistory.user_id == user_id]
     if gtin:
         base_filter.append(LabelHistory.gtin == gtin)
@@ -179,8 +177,8 @@ async def list_label_history(
 @router.get("/history/{history_id}", response_model=LabelHistoryDetailResponse)
 async def get_label_history_detail(
     history_id: int,
-    user_id: int = Query(..., gt=0),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> LabelHistoryDetailResponse:
     """Return history record metadata. Barcode rendering is handled client-side via bwip-js."""
     started_at = perf_counter()
@@ -188,7 +186,7 @@ async def get_label_history_detail(
         db=db,
         model=LabelHistory,
         record_id=history_id,
-        user_id=user_id,
+        user_id=user.id,
         object_name="history record",
         forbidden_detail="You do not have permission to view this record",
     )
@@ -202,14 +200,14 @@ async def get_label_history_detail(
 @router.delete("/history/{history_id}")
 async def delete_label_history(
     history_id: int,
-    user_id: int = Query(..., gt=0),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_active_user),
 ) -> dict[str, str]:
     record = await get_owned_record_or_404(
         db=db,
         model=LabelHistory,
         record_id=history_id,
-        user_id=user_id,
+        user_id=user.id,
         object_name="history record",
         forbidden_detail="You do not have permission to delete this record",
     )

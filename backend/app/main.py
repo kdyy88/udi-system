@@ -8,19 +8,22 @@ from fastapi.middleware.gzip import GZipMiddleware
 from app.api.router import api_router
 from app.core.config import settings
 from app.db import models  # noqa: F401
+from app.db.redis import close_redis, init_redis
 from app.db.session import AsyncSessionLocal, Base, engine
 from app.services.auth_service import seed_default_users
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # Startup: create tables and seed default users
+    # Startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as db:
         await seed_default_users(db)
+    await init_redis()
     yield
-    # Shutdown: release connection pool
+    # Shutdown
+    await close_redis()
     await engine.dispose()
 
 

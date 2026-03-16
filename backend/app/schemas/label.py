@@ -47,7 +47,7 @@ class LabelInput(BaseModel):
 
 
 class LabelCreateRequest(LabelInput):
-    user_id: int = Field(ge=1)
+    pass
 
 
 class LabelGenerateResponse(BaseModel):
@@ -92,6 +92,25 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     user_id: int
     username: str
+    role: str
+    message: str
+
+
+# ── New schemas for fastapi-users era ─────────────────────────────────────────
+
+class LegacyLoginRequest(BaseModel):
+    """Accepted by POST /auth/login for backward compat (username or email)."""
+
+    username: str = Field(min_length=1, max_length=320)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class LegacyLoginResponse(BaseModel):
+    """Returned by POST /auth/login — same shape clients already parse."""
+
+    user_id: int
+    username: str
+    email: str
     role: str
     message: str
 

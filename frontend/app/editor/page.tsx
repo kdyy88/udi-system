@@ -36,7 +36,7 @@ function NewEditorPageContent() {
   const loadCanvas = useCanvasStore((s) => s.loadCanvas);
   const canvasDef = useCanvasStore((s) => s.canvasDef);
   const createTemplate = useCreateTemplate();
-  const saveOverride = useSaveSystemTemplateOverride(authUser?.user_id ?? 0);
+  const saveOverride = useSaveSystemTemplateOverride();
 
   useEffect(() => {
     if (!authUser) return;
@@ -87,7 +87,6 @@ function NewEditorPageContent() {
     const name = editingSysId ? `${templateName} 副本` : templateName;
     try {
       const result = await createTemplate.mutateAsync({
-        userId: authUser.user_id,
         name,
         canvas: def,
       });
