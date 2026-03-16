@@ -1,8 +1,5 @@
 # 源码导读地图（GS1 UDI System）
 
-> **最后更新：v3.6（2026-03-14）**
-> 本文档反映当前架构。v1.x 的生成链路（后端 barcode_gen + base64）已废弃，v2.x 无批量功能，v3.0 引入批量打码，v3.1 精简组件结构，v3.5 引入可视化模板编辑器（拖拽画布 + 模板库），v3.6 补全模板管理页、单标签模板预览、GS1-128 6:1 比例约束、管理员直接编辑系统模板及若干 Bug 修复，请以本文档为准。
-
 这份文档帮助你快速建立"代码全景图"：
 
 - 先看哪里（入口）
@@ -35,7 +32,7 @@
 - [frontend/app/page.tsx](frontend/app/page.tsx)
   - 主业务页：表单录入 → 本地 GS1 计算 → 打开预览弹窗 → `<HistoryTabs>`（批次总览 + 全部明细）。
 - [frontend/app/batch/page.tsx](frontend/app/batch/page.tsx)
-  - 批量打码页：Excel 上传 → 解析预览 → **从模板库选取自定义模板**（`TemplateGallery mode="select"`）→ 所见即所得样式预览 → 保存后端 → SVG ZIP 下载（6 阶段状态机）。
+  - 批量打码页：Excel 上传 → 客户端解析与校验 → 模板选择与弹窗预览 → 保存后端 → SVG ZIP 下载（6 阶段状态机）。
 - [frontend/app/history/page.tsx](frontend/app/history/page.tsx)
   - 历史台账页：复用 `<PageHeader>` + `<HistoryTabs>`。
 - [frontend/app/history/batch/[id]/page.tsx](frontend/app/history/batch/[id]/page.tsx)
@@ -117,7 +114,7 @@
 - [frontend/app/page.tsx](frontend/app/page.tsx)
   - 表单录入 → `handlePreviewLocally`（同步）→ 打开 PreviewDialog；`<HistoryTabs>` 双 Tab 历史区。
 - [frontend/app/batch/page.tsx](frontend/app/batch/page.tsx)
-  - 批量打码页面：拖拽上传 Excel → 解析预览 → 模板选择 → 所见即所得样式预览（`SampleLabelPreview`，与导出 SVG 同一渲染路径）→ 保存并生成 SVG ZIP。
+  - 批量打码页面：拖拽上传 Excel → 解析结果表格与错误提示 → 模板选择 → 模板弹窗预览 → 保存并生成 SVG ZIP。
 - [frontend/app/history/page.tsx](frontend/app/history/page.tsx)
   - 历史台账：页头 + `<HistoryTabs>`（精简薄包装，约 50 行）。
 - [frontend/app/history/batch/[id]/page.tsx](frontend/app/history/batch/[id]/page.tsx)
@@ -138,7 +135,7 @@
   - 调用 `parseExcelFile` 解析、`api.post` 保存、`exportBatchToZip` 生成 SVG ZIP。
   - v3.6.1：保存时一并提交 `template_definition`，供批次历史重下载复用原模板。
 - [frontend/hooks/useRequireAuth.ts](frontend/hooks/useRequireAuth.ts)（v3.6.1 新增）
-  - 页面级认证守卫：读取本地登录态、未登录跳转 `/login`、统一 `logout()`。
+  - 页面级认证守卫：基于 `useSyncExternalStore` 订阅本地登录态，未登录跳转 `/login`、统一 `logout()`。
 - [frontend/hooks/useLabelTemplates.ts](frontend/hooks/useLabelTemplates.ts)（v3.5 新增）
   - 基于 TanStack Query 的模板 CRUD：`useListTemplates`、`useGetTemplate`、`useCreateTemplate`、`useUpdateTemplate`、`useDeleteTemplate`。
 - [frontend/hooks/useHiddenSystemTemplates.ts](frontend/hooks/useHiddenSystemTemplates.ts)（v3.6 新增）
@@ -152,7 +149,7 @@
   - 自包含双 Tab 历史组件：批次总览（`BatchListTable` + `useLabelBatches`）| 全部明细（`DataTable` + `useLabelHistory` + 筛选）。
   - 内含 `PreviewDialog`；同时挂载于首页（表单下方）和历史台账页，两处完全一致。
 - [frontend/components/labels/PageHeader.tsx](frontend/components/labels/PageHeader.tsx)
-  - 复用页头组件：标题 / 说明 / 当前用户 / 退出登录。
+  - 复用页头组件：标题 / 说明。
 - [frontend/components/labels/LabelForm.tsx](frontend/components/labels/LabelForm.tsx)
   - 标签录入表单；提交行含"批量上传"快跳链接（`href="/batch"`）与"生成"按钮并排。
 - [frontend/components/labels/PreviewDialog.tsx](frontend/components/labels/PreviewDialog.tsx)
@@ -170,8 +167,11 @@
 - [frontend/components/editor/PropertiesPanel.tsx](frontend/components/editor/PropertiesPanel.tsx)（v3.5 新增）
   - 右侧属性面板：位置/尺寸（mm 显示）、类型专属属性面板、GS1 AI 字段绑定下拉选择器。
 - [frontend/components/editor/TemplateGallery.tsx](frontend/components/editor/TemplateGallery.tsx)（v3.5 新增，v3.6 重写）
-  - 模板卡片网格；`mode="manage"` 显示编辑/删除操作；`mode="select"` 调用 `onSelect(definition, id)` 回调。
-  - v3.6 重写：两分区（系统默认 / 我的模板）；`isAdmin` prop 控制管理员按钒（编辑/恢复出厂/隐藏切换）；`applyOverrides()` 展现最新系统模板。
+  - 模板卡片网格；`mode="manage"` 显示编辑/删除操作；`mode="select"` 调用 `onSelect(definition, id, name)` 回调。
+  - 当前为折叠式两分区（系统默认 / 我的模板）；`isAdmin` 控制系统模板编辑 / 恢复出厂 / 隐藏切换；`applyOverrides()` 展现最新系统模板。
+  - 选择态支持模板卡片悬浮预览入口。
+- [frontend/components/editor/TemplatePreviewDialog.tsx](frontend/components/editor/TemplatePreviewDialog.tsx)
+  - 批量打码页使用的精简模板预览弹窗；基于首条有效数据渲染当前模板的大图预览。
 - [frontend/components/ui](frontend/components/ui)
   - 基础 UI 组件（Button/Input/Dialog/DatePicker/Toaster）。
 
@@ -203,7 +203,7 @@
   - GS1 AI 字符串工具：`findAiText(hri, ai)`、`findAiValue(hri, ai)`、`escapeXml(s)`。
   - 被 `svgTemplates.ts`、`batchExporter.ts`、`PreviewTemplateCanvas.tsx` 等共同引用。
 - [frontend/lib/excelParser.ts](frontend/lib/excelParser.ts)
-  - SheetJS 解析 Excel 文件；自动检测表头（中英文均可）；每行客户端校验 GTIN-14 Mod-10 + 至少一个 PI；最多 500 行。
+  - SheetJS 解析 Excel 文件；自动检测表头（中英文均可）；每行客户端校验 GTIN-14 Mod-10、日期格式（`YYMMDD` / `YY/MM/DD` / `YYYY-MM-DD`）与至少一个 PI；最多 500 行。
 - [frontend/lib/svgTemplates.ts](frontend/lib/svgTemplates.ts)（v3.5 重写，v3.6 修复）
   - 旧三函数（`renderCompactSvg` / `renderDualSvg` / `renderDetailSvg`）已删除。
   - 新导出 `renderCustomSvg(input, canvas: CanvasDefinition): string`：遍历 `canvas.elements`，按类型分发渲染（barcode → bwip-js SVG；text → 解析 fieldBinding 填入 AI 值；rect → `<rect>`）。
@@ -214,7 +214,7 @@
 - [frontend/lib/api.ts](frontend/lib/api.ts)
   - Axios 实例。
 - [frontend/lib/auth.ts](frontend/lib/auth.ts)
-  - 登录态存取（localStorage）；`isAdmin(user)` 工具函数。
+  - 登录态存取与订阅（localStorage + 稳定快照缓存）；`isAdmin(user)` 工具函数。
   - `AuthUser` 类型已收敛到 `types/udi.ts`，此处不再重复定义。
 - [frontend/lib/systemTemplates.ts](frontend/lib/systemTemplates.ts)（v3.6 新增）
   - 三套硬编码出厂系统模板（紧凑型/标准型/双码型），ID 前缀 `"sys-"`。
@@ -294,9 +294,9 @@
 用户拖拽 / 选择 Excel 文件
   → useBatchUpload.handleFileSelect(file)
       → lib/excelParser.ts: parseExcelFile()            [客户端, SheetJS]
-          → 检测表头 → 逐行读取 → GTIN-14 Mod-10 校验
+      → 检测表头 → 逐行读取 → GTIN-14 Mod-10 / 日期格式 / PI 完整性校验
           → 返回 ParsedRow[]（含 validationError 字段）
-      → phase: "validated"（展示预览表格）
+    → phase: "validated"（展示结果表格与错误提示）
 
 用户点击"保存并生成"
   → useBatchUpload.startGenerate(template)
@@ -350,8 +350,9 @@
 
 批量打码页选模板 → TemplateGallery mode="select"
   → useListTemplates(userId) → GET /api/v1/templates?user_id=...
-  → 点击卡片 → onSelect(recordToDefinition(record), record)
+  → 点击卡片 → onSelect(recordToDefinition(record), id, name)
       → setSelectedTemplate(def: CanvasDefinition)
+  → 点击卡片预览按钮 → TemplatePreviewDialog
   → 用户点击"保存并生成" → startGenerate(selectedTemplate)
       → exportBatchToZip({ templateDefinition: def, ... })
           → 逐条: renderCustomSvg(labelInput, def)  [svgTemplates.ts]
