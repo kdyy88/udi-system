@@ -28,7 +28,7 @@ services:
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
       FRONTEND_URL: ${FRONTEND_URL}
       CORS_ORIGINS: ${CORS_ORIGINS}
-      COOKIE_SECURE: "true"
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       WORKERS: ${WORKERS:-4}
     ports:
       - "${BACKEND_PORT:-18000}:8000"
