@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toDisplayDate } from "@/lib/dateUtils";
 import type { LabelHistoryItem } from "@/types/udi";
 
@@ -9,6 +10,7 @@ type DataTableProps = {
   onReview: (row: LabelHistoryItem) => void;
   onDelete: (id: number) => void;
   loadingRowId?: number | null;
+  loading?: boolean;
   pagination?: {
     total: number;
     hasPrev: boolean;
@@ -18,7 +20,25 @@ type DataTableProps = {
   };
 };
 
-export function DataTable({ rows, onReview, onDelete, loadingRowId, pagination }: DataTableProps) {
+function SkeletonRows() {
+  return (
+    <>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <tr key={i} className="border-t">
+          <td className="px-3 py-2"><Skeleton className="h-4 w-8" /></td>
+          <td className="px-3 py-2"><Skeleton className="h-4 w-32" /></td>
+          <td className="px-3 py-2"><Skeleton className="h-4 w-20" /></td>
+          <td className="px-3 py-2"><Skeleton className="h-4 w-16" /></td>
+          <td className="px-3 py-2"><Skeleton className="h-4 w-24" /></td>
+          <td className="px-3 py-2"><Skeleton className="h-4 w-32" /></td>
+          <td className="px-3 py-2 text-right"><Skeleton className="ml-auto h-7 w-24" /></td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+export function DataTable({ rows, onReview, onDelete, loadingRowId, loading, pagination }: DataTableProps) {
   return (
     <div className="rounded-xl border">
       <div className="overflow-x-auto">
@@ -35,7 +55,9 @@ export function DataTable({ rows, onReview, onDelete, loadingRowId, pagination }
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 ? (
+          {loading ? (
+            <SkeletonRows />
+          ) : rows.length === 0 ? (
             <tr>
               <td className="px-3 py-6 text-center text-muted-foreground" colSpan={7}>
                 暂无历史记录

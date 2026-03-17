@@ -6,8 +6,11 @@ import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { Upload, Download, CheckCircle, AlertCircle } from "lucide-react";
 
+import { AnimatePresence, motion } from "framer-motion";
 import { PageHeader } from "@/components/labels/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageTransition } from "@/components/shared/PageTransition";
 import { useBatchUpload } from "@/hooks/useBatchUpload";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import type { CanvasDefinition } from "@/types/template";
@@ -19,7 +22,7 @@ import { TemplatePreviewDialog } from "@/components/editor/TemplatePreviewDialog
 function downloadExcelTemplate() {
   const wb = XLSX.utils.book_new();
   // Headers must exactly match COLUMN_MAP keys in excelParser.ts
-  const headers = ["GTIN-14", "批次号", "有效期", "序列号", "生产日期", "备注"];
+  const headers = ["(01)DI/GTIN-14", "(10)批次号", "(17)有效期(格式YYMMDD)", "(21)序列号", "(11)生产日期(格式YYMMDD)", "备注"];
   // GTINs must have a valid GS1 Mod-10 check digit (last digit)
   const examples = [
     ["09506000134383", "LOT001", "261231", "SN000001", "250101", "示例行1"],
@@ -49,7 +52,7 @@ function ParsedRowsTable({ rows }: { rows: ReturnType<typeof useBatchUpload>["ro
         <table className="w-full">
           <thead className="sticky top-0 bg-muted/80">
             <tr>
-              {["行", "GTIN-14", "批次号", "生产日期", "有效期", "序列号", "状态"].map((h) => (
+              {["行", "(01)DI/GTIN-14", "(10)批次号", "(17)有效期(格式YYMMDD)", "(21)序列号", "(11)生产日期(格式YYMMDD)", "状态"].map((h) => (
                 <th key={h} className="px-3 py-2 text-left font-medium text-muted-foreground">
                   {h}
                 </th>
@@ -62,9 +65,9 @@ function ParsedRowsTable({ rows }: { rows: ReturnType<typeof useBatchUpload>["ro
                 <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{row.rowIndex + 1}</td>
                 <td className="px-3 py-1.5 font-mono">{row.di}</td>
                 <td className="px-3 py-1.5">{row.lot ?? "—"}</td>
-                <td className="px-3 py-1.5">{row.production_date ?? "—"}</td>
                 <td className="px-3 py-1.5">{row.expiry ?? "—"}</td>
                 <td className="px-3 py-1.5">{row.serial ?? "—"}</td>
+                <td className="px-3 py-1.5">{row.production_date ?? "—"}</td>
                 <td className="px-3 py-1.5">
                   {row.validationError ? (
                     <span className="text-destructive">{row.validationError}</span>
@@ -158,7 +161,15 @@ export default function BatchPage() {
     useBatchUpload();
 
   if (checkingAuth || !authUser) {
-    return <main className="p-6 text-sm text-muted-foreground">正在检查登录状态…</main>;
+    return (
+      <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-36" />
+        </div>
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-44 w-full rounded-xl" />
+      </main>
+    );
   }
 
   const validRows = rows.filter((r) => r.validationError === null);
@@ -172,7 +183,13 @@ export default function BatchPage() {
   const previewRow = validRows[0] ?? null;
   const invalidRows = rows.filter((r) => r.validationError !== null);
 
+  const phaseKey =
+    isIdle || isError ? "idle" :
+    isParsing ? "parsing" :
+    isDone ? "done" : "working";
+
   return (
+    <PageTransition>
     <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
       <PageHeader title="批量打码通道" titleClassName="text-2xl font-semibold" />
 
@@ -188,19 +205,37 @@ export default function BatchPage() {
         </Button>
       </div>
 
+      {/* Phase-switched content area */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={phaseKey}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+        >
+
       {/* Upload Zone */}
       {(isIdle || isError) && (
         <div className="space-y-3">
           <DropZone onFile={handleFileSelect} />
-          {isError && (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <div>
-                <p className="font-medium">错误</p>
-                <p>{errorMsg}</p>
-              </div>
-            </div>
-          )}
+          <AnimatePresence>
+            {isError && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-medium">错误</p>
+                  <p>{errorMsg}</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
@@ -311,6 +346,10 @@ export default function BatchPage() {
           </div>
         </div>
       )}
+
+        </motion.div>
+      </AnimatePresence>
     </main>
+    </PageTransition>
   );
 }

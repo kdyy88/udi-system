@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search, ExternalLink, Layers, List } from "lucide-react";
@@ -198,67 +199,83 @@ export function HistoryTabs({ authUser }: { authUser: AuthUser }) {
         />
       </div>
 
-      {/* ── Tab: 批次总览 ── */}
-      {activeTab === "batches" && (
-        <div className="flex flex-col gap-4">
-          {loadingBatches ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">加载中…</p>
-          ) : (
-            <BatchListTable items={batchItems} onDelete={handleDeleteBatch} />
-          )}
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">共 {batchTotal} 个批次</span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={!batchHasPrev} onClick={batchPrev}>
-                上一页
-              </Button>
-              <Button variant="outline" size="sm" disabled={!batchHasNext} onClick={batchNext}>
-                下一页
-              </Button>
+      {/* ── Tab content with AnimatePresence ── */}
+      <AnimatePresence mode="wait" initial={false}>
+        {activeTab === "batches" && (
+          <motion.div
+            key="batches"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="flex flex-col gap-4"
+          >
+            {loadingBatches ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">加载中…</p>
+            ) : (
+              <BatchListTable items={batchItems} onDelete={handleDeleteBatch} />
+            )}
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">共 {batchTotal} 个批次</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={!batchHasPrev} onClick={batchPrev}>
+                  上一页
+                </Button>
+                <Button variant="outline" size="sm" disabled={!batchHasNext} onClick={batchNext}>
+                  下一页
+                </Button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
 
-      {/* ── Tab: 全部明细 ── */}
-      {activeTab === "all" && (
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-end gap-3 rounded-xl border p-4">
-            <div className="min-w-60 flex-1 space-y-2">
-              <label className="text-sm font-medium">按 GTIN 筛选</label>
-              <Input
-                value={localGtin}
-                maxLength={14}
-                onChange={(e) => setLocalGtin(e.target.value.trim())}
-              />
+        {activeTab === "all" && (
+          <motion.div
+            key="all"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.16, ease: "easeOut" }}
+            className="flex flex-col gap-4"
+          >
+            <div className="flex flex-wrap items-end gap-3 rounded-xl border p-4">
+              <div className="min-w-60 flex-1 space-y-2">
+                <label className="text-sm font-medium">按 GTIN 筛选</label>
+                <Input
+                  value={localGtin}
+                  maxLength={14}
+                  onChange={(e) => setLocalGtin(e.target.value.trim())}
+                />
+              </div>
+              <div className="min-w-60 flex-1 space-y-2">
+                <label className="text-sm font-medium">按批次号筛选</label>
+                <Input
+                  value={localBatchNo}
+                  onChange={(e) => setLocalBatchNo(e.target.value.trim())}
+                />
+              </div>
+              <Button onClick={() => handleSearch(localGtin, localBatchNo)} disabled={loadingHistory}>
+                <Search />
+                {loadingHistory ? "查询中..." : "查询"}
+              </Button>
             </div>
-            <div className="min-w-60 flex-1 space-y-2">
-              <label className="text-sm font-medium">按批次号筛选</label>
-              <Input
-                value={localBatchNo}
-                onChange={(e) => setLocalBatchNo(e.target.value.trim())}
-              />
-            </div>
-            <Button onClick={() => handleSearch(localGtin, localBatchNo)} disabled={loadingHistory}>
-              <Search />
-              {loadingHistory ? "查询中..." : "查询"}
-            </Button>
-          </div>
 
-          <DataTable
-            rows={historyRows}
-            onReview={handleReview}
-            onDelete={handleDelete}
-            pagination={{
-              total: historyTotal,
-              hasPrev: historyHasPrev,
-              hasNext: historyHasNext,
-              onPrev: historyPrev,
-              onNext: historyNext,
-            }}
-          />
-        </div>
-      )}
+            <DataTable
+              rows={historyRows}
+              onReview={handleReview}
+              onDelete={handleDelete}
+              loading={loadingHistory}
+              pagination={{
+                total: historyTotal,
+                hasPrev: historyHasPrev,
+                hasNext: historyHasNext,
+                onPrev: historyPrev,
+                onNext: historyNext,
+              }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <PreviewDialog
         open={dialogOpen}

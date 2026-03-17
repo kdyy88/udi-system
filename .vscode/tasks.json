@@ -11,6 +11,15 @@
       "problemMatcher": []
     },
     {
+      "label": "DB: Start Redis",
+      "type": "shell",
+      "command": "docker-compose up -d redis",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "dev" },
+      "problemMatcher": []
+    },
+    {
       "label": "DB: Stop Postgres",
       "type": "shell",
       "command": "docker-compose stop postgres",
@@ -55,7 +64,7 @@
     },
     {
       "label": "Dev: Start All",
-      "dependsOn": ["DB: Start Postgres", "Backend: Dev Server", "Frontend: Dev Server"],
+      "dependsOn": ["DB: Start Postgres", "DB: Start Redis", "Backend: Dev Server", "Frontend: Dev Server"],
       "dependsOrder": "sequence",
       "group": { "kind": "build", "isDefault": true },
       "presentation": { "reveal": "always" },

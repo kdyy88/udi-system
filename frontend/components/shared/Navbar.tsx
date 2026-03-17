@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronDown, LogOut, Menu, UserCircle2 } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Settings, UserCircle2 } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { clearAuthUser, getAuthUser, subscribeAuthUser } from "@/lib/auth";
+import { clearAuthUser, getAuthUser, isAdmin, subscribeAuthUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 const ENABLE_AUTH = process.env.NEXT_PUBLIC_ENABLE_AUTH === "true";
@@ -120,6 +120,12 @@ export function Navbar() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                {isAdmin(authUser) && (
+                  <DropdownMenuItem className="gap-2" onClick={() => router.push("/admin")}>
+                    <Settings className="size-4 text-muted-foreground" />
+                    管理后台
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem className="gap-2 text-destructive" onClick={handleLogout}>
                   <LogOut className="size-4" />
                   退出登录

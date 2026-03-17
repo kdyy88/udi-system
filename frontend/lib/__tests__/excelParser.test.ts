@@ -16,7 +16,7 @@ async function createExcelFile(rows: Array<Array<string>>) {
 describe("parseExcelFile", () => {
   it("normalizes YYYY-MM-DD dates to YYMMDD", async () => {
     const file = await createExcelFile([
-      ["GTIN-14", "批次号", "有效期", "序列号", "生产日期", "备注"],
+      ["(01)DI/GTIN-14", "(10)批次号", "(17)有效期(格式YYMMDD)", "(21)序列号", "(11)生产日期(格式YYMMDD)", "备注"],
       ["09506000134383", "LOT001", "2026-02-03", "SN001", "2025-01-01", "ok"],
     ]);
 
@@ -29,7 +29,7 @@ describe("parseExcelFile", () => {
 
   it("rejects unsupported YYYYMMDD dates", async () => {
     const file = await createExcelFile([
-      ["GTIN-14", "批次号", "有效期", "序列号", "生产日期", "备注"],
+      ["(01)DI/GTIN-14", "(10)批次号", "(17)有效期(格式YYMMDD)", "(21)序列号", "(11)生产日期(格式YYMMDD)", "备注"],
       ["09506000134383", "LOT001", "20260203", "SN001", "250101", "bad date"],
     ]);
 

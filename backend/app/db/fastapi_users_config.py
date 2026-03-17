@@ -32,6 +32,9 @@ from app.db.user_manager import UserManager
 # ─── Pydantic schemas ─────────────────────────────────────────────────────────
 
 class UserRead(schemas.BaseUser[int]):
+    # Override email to `str` so internal accounts with reserved-domain addresses
+    # (e.g. @system.local) are not rejected by Pydantic's strict EmailStr validator.
+    email: str  # type: ignore[assignment]
     username: str | None = None
     role: str = "operator"
 

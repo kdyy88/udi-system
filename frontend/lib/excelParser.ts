@@ -2,21 +2,25 @@
  * Excel template parser for batch UDI label upload.
  *
  * Expected column headers in the first row (case-insensitive, trimmed):
- *   GTIN-14 / gtin / di          → di          (required)
- *   批次号 / lot / batch          → lot
- *   有效期 / expiry / 到期日       → expiry
- *   序列号 / serial               → serial
- *   生产日期 / production_date    → production_date
- *   备注 / remarks                → remarks
+ *   Standard (new):  (01)DI/GTIN-14 / (10)批次号 / (17)有效期(格式YYMMDD) / (21)序列号 / (11)生产日期(格式YYMMDD) / 备注
+ *   Legacy aliases:  GTIN-14 / gtin / di  |  批次号 / lot  |  有效期 / expiry  |  序列号 / serial  |  生产日期
  *
  * If headers are not found, falls back to positional mapping:
- *   A=GTIN-14, B=lot, C=expiry, D=serial, E=production_date, F=remarks
+ *   A=(01)DI/GTIN-14, B=(10)批次号, C=(17)有效期, D=(21)序列号, E=(11)生产日期, F=备注
  */
 
 import * as XLSX from "xlsx";
 import type { ParsedRow } from "@/types/batch";
 
 const COLUMN_MAP: Record<string, keyof Omit<ParsedRow, "rowIndex" | "validationError">> = {
+  // ── Standard headers (with GS1 AI prefix) ───────────────────────────
+  "(01)di/gtin-14": "di",
+  "(10)批次号": "lot",
+  "(17)有效期(格式yymmdd)": "expiry",
+  "(21)序列号": "serial",
+  "(11)生产日期(格式yymmdd)": "production_date",
+
+  // ── Legacy / alias headers (backward compat) ────────────────────────
   "gtin-14": "di",
   gtin: "di",
   di: "di",

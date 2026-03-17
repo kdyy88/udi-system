@@ -5,8 +5,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 
+import { Loader2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageTransition } from "@/components/shared/PageTransition";
 import { getAuthUser, setAuthUser } from "@/lib/auth";
 import { api } from "@/lib/api";
 import type { LoginResponse } from "@/types/udi";
@@ -53,6 +56,7 @@ export default function LoginPage() {
   };
 
   return (
+    <PageTransition>
     <main className="mx-auto flex min-h-screen w-full max-w-md items-center px-6 py-10">
       <section className="w-full rounded-xl border p-6">
         <h1 className="text-2xl font-semibold">登录</h1>
@@ -63,7 +67,7 @@ export default function LoginPage() {
             <label htmlFor="login-username" className="text-sm font-medium">用户名</label>
             <Input
               id="login-username"
-              autoComplete="username"
+              autoComplete="off"
               name="username"
               value={username}
               onChange={(e) => setUsername(e.target.value.trim())}
@@ -75,7 +79,7 @@ export default function LoginPage() {
             <Input
               id="login-password"
               type="password"
-              autoComplete="current-password"
+              autoComplete="new-password"
               name="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -83,7 +87,12 @@ export default function LoginPage() {
             />
           </div>
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "登录中..." : "登录"}
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                登录中...
+              </>
+            ) : "登录"}
           </Button>
         </form>
 
@@ -99,5 +108,6 @@ export default function LoginPage() {
         </div>
       </section>
     </main>
+    </PageTransition>
   );
 }
