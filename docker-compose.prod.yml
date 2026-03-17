@@ -28,11 +28,13 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-""}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
       FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL must be set (e.g. https://yourdomain.com)}
-      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set (e.g. https://yourdomain.com)}
+      # With nginx as single entry point, CORS_ORIGINS = same origin as frontend
+      CORS_ORIGINS: ${FRONTEND_URL:?FRONTEND_URL must be set}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       WORKERS: ${WORKERS:-4}
-    ports:
-      - "${BACKEND_PORT:-18000}:8000"
+    # No ports exposed — only reachable via nginx on the internal network
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 15s
@@ -61,15 +63,34 @@ services:
     build:
       context: ./frontend
       args:
+        # BACKEND_URL points to internal backend — Next.js rewrites proxy /api/* server-side
         BACKEND_URL: http://backend:8000
         NEXT_PUBLIC_ENABLE_AUTH: ${ENABLE_AUTH:-true}
     container_name: gs1-udi-frontend
     restart: unless-stopped
+    # No ports exposed — only reachable via nginx on the internal network
+    expose:
+      - "3000"
     depends_on:
       backend:
         condition: service_healthy
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: gs1-udi-nginx
+    restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-8080}:3000"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Mount SSL certs here when HTTPS is enabled:
+      # - /etc/letsencrypt/live/${DOMAIN}:/etc/nginx/certs:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_prod_data:
