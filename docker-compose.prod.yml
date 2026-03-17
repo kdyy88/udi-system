@@ -30,7 +30,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL must be set (e.g. https://yourdomain.com)}
       # With nginx as single entry point, CORS_ORIGINS = same origin as frontend
       CORS_ORIGINS: ${FRONTEND_URL:?FRONTEND_URL must be set}
-      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       WORKERS: ${WORKERS:-4}
     # No ports exposed — only reachable via nginx on the internal network
     expose:
