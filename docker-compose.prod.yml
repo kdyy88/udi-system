@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-gs1udi}
       POSTGRES_USER: ${POSTGRES_USER:-gs1user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gs1pass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,23 +21,29 @@ services:
     container_name: gs1-udi-backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-gs1user}:${POSTGRES_PASSWORD:-gs1pass}@postgres:5432/${POSTGRES_DB:-gs1udi}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-gs1user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-gs1udi}
       REDIS_URL: redis://redis:6379
       ENABLE_AUTH: ${ENABLE_AUTH:-true}
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in production}
       RESEND_API_KEY: ${RESEND_API_KEY:-""}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
-      FRONTEND_URL: ${FRONTEND_URL}
-      CORS_ORIGINS: ${CORS_ORIGINS}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL must be set (e.g. https://yourdomain.com)}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set (e.g. https://yourdomain.com)}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       WORKERS: ${WORKERS:-4}
     ports:
       - "${BACKEND_PORT:-18000}:8000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -45,6 +51,11 @@ services:
     restart: unless-stopped
     volumes:
       - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   frontend:
     build:
@@ -55,7 +66,8 @@ services:
     container_name: gs1-udi-frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "${FRONTEND_PORT:-8080}:3000"
 

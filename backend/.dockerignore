@@ -1,0 +1,32 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.egg-info/
+dist/
+build/
+
+# Virtual environment — pip installs fresh inside the image
+.venv/
+venv/
+
+# Local data / outputs (not needed in image)
+data/
+outputs/
+
+# Dev secrets — never bake into image
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# Docs / misc
+*.md
+Docs/
