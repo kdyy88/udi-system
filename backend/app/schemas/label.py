@@ -61,7 +61,7 @@ class LabelGenerateResponse(BaseModel):
 
 class LabelHistoryResponse(BaseModel):
     id: int
-    user_id: int
+    owner_id: str
     batch_id: int | None = None
     gtin: str
     batch_no: str | None
@@ -79,7 +79,7 @@ class LabelHistoryDetailResponse(LabelHistoryResponse):
 
 
 class LabelHistoryListResponse(BaseModel):
-    total: int
+    total: int | None
     next_cursor: int | None
     items: list[LabelHistoryResponse]
 
@@ -90,7 +90,7 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    user_id: int
+    user_id: str
     username: str
     role: str
     message: str
@@ -108,7 +108,7 @@ class LegacyLoginRequest(BaseModel):
 class LegacyLoginResponse(BaseModel):
     """Returned by POST /auth/login — same shape clients already parse."""
 
-    user_id: int
+    user_id: str
     username: str
     email: str
     role: str

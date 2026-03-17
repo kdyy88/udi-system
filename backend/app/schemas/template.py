@@ -22,7 +22,7 @@ class TemplateUpdate(BaseModel):
 
 class TemplateRead(BaseModel):
     id: int
-    user_id: int
+    owner_id: str
     name: str
     description: str | None
     canvas_width_px: float
@@ -35,5 +35,6 @@ class TemplateRead(BaseModel):
 
 
 class TemplateListResponse(BaseModel):
-    total: int
+    total: int | None
+    next_cursor: int | None
     items: list[TemplateRead]

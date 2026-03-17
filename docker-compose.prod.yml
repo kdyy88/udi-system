@@ -23,6 +23,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-gs1user}:${POSTGRES_PASSWORD:-gs1pass}@postgres:5432/${POSTGRES_DB:-gs1udi}
       REDIS_URL: redis://redis:6379
+      ENABLE_AUTH: ${ENABLE_AUTH:-true}
       JWT_SECRET: ${JWT_SECRET}
       RESEND_API_KEY: ${RESEND_API_KEY:-""}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
@@ -50,6 +51,7 @@ services:
       context: ./frontend
       args:
         BACKEND_URL: http://backend:8000
+        NEXT_PUBLIC_ENABLE_AUTH: ${ENABLE_AUTH:-true}
     container_name: gs1-udi-frontend
     restart: unless-stopped
     depends_on:

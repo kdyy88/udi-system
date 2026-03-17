@@ -93,7 +93,7 @@ async def legacy_login(
         response.headers.append(k, v)
 
     return LegacyLoginResponse(
-        user_id=user.id,
+        user_id=str(user.id),
         username=user.username or user.email,
         email=user.email,
         role=user.role,

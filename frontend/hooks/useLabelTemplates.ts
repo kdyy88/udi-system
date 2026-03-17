@@ -1,18 +1,60 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useInfiniteQuery, useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { LabelTemplateRecord, TemplateListResponse, CanvasDefinition } from "@/types/template";
 
 const BASE = "/api/v1/templates";
+const DEFAULT_PAGE_SIZE = 24;
+
+type QueryOptions = {
+  enabled?: boolean;
+  pageSize?: number;
+  fetchAll?: boolean;
+};
+
+async function fetchTemplatePage(cursor: number | null, pageSize: number): Promise<TemplateListResponse> {
+  return api.get<TemplateListResponse>(BASE, {
+    params: {
+      cursor: cursor ?? undefined,
+      page_size: pageSize,
+    },
+  }).then((r) => r.data);
+}
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export function useListTemplates() {
-  return useQuery<TemplateListResponse>({
-    queryKey: ["templates"],
-    queryFn: () =>
-      api.get<TemplateListResponse>(BASE).then((r) => r.data),
-    enabled: true,
+export function useListTemplates(options?: QueryOptions) {
+  const pageSize = options?.pageSize ?? DEFAULT_PAGE_SIZE;
+  const query = useInfiniteQuery<TemplateListResponse, Error, InfiniteData<TemplateListResponse>, [string, number], number | null>({
+    queryKey: ["templates", pageSize],
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => fetchTemplatePage(pageParam, pageSize),
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled: options?.enabled ?? true,
   });
+
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = query.data?.pages[0]?.total ?? items.length;
+  const nextCursor = query.data?.pages[query.data.pages.length - 1]?.next_cursor ?? null;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+
+  useEffect(() => {
+    if (options?.fetchAll && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [options?.fetchAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  return {
+    ...query,
+    data: {
+      total,
+      next_cursor: nextCursor,
+      items,
+    },
+    items,
+    total,
+    nextCursor,
+  };
 }
 
 export function useGetTemplate(id: number) {

@@ -11,7 +11,7 @@ export type BatchSource = "excel" | "form";
 
 export type LabelBatchSummary = {
   id: number;
-  user_id: number;
+  owner_id: string;
   name: string;
   source: BatchSource;
   total_count: number;
@@ -28,7 +28,7 @@ export type BatchCreateResponse = {
 };
 
 export type LabelBatchListResponse = {
-  total: number;
+  total: number | null;
   next_cursor: number | null;
   items: LabelBatchSummary[];
 };

@@ -37,7 +37,14 @@ export function TemplateGallery({
   canPreview = false,
   onPreview,
 }: Props) {
-  const { data, isLoading } = useListTemplates();
+  const {
+    items: userTemplates,
+    total: templateTotal,
+    isLoading,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useListTemplates();
   const deleteMut = useDeleteTemplate();
 
   const { data: hiddenData } = useHiddenSystemTemplates();
@@ -49,10 +56,10 @@ export function TemplateGallery({
   const overrides = overridesData?.value ?? {};
   const effectiveSystemTemplates = applyOverrides(overrides);
 
-  const userTemplates = data?.items ?? [];
   const selectableMode = mode === "select";
   const [manualSystemOpen, setManualSystemOpen] = useState(selectableMode);
   const [manualUserOpen, setManualUserOpen] = useState(false);
+  const loadedTemplateCount = userTemplates.length;
 
   /** Toggle a system template's visibility (admin only). */
   function toggleHide(id: string) {
@@ -202,70 +209,87 @@ export function TemplateGallery({
             : "暂无自定义模板"}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {userTemplates.map((tmpl) => {
-            const id = String(tmpl.id);
-            const isSelected = selectedId === id;
-            return (
-              <div
-                key={tmpl.id}
-                className={`group relative cursor-pointer rounded-lg border-2 p-3 transition-colors ${
-                  isSelected
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-primary/50"
-                }`}
-                onClick={() => {
-                  if (mode === "select") onSelect?.(recordToDefinition(tmpl), id, tmpl.name);
-                }}
-              >
-                <div className="mb-2 flex h-16 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
-                  {Math.round(tmpl.canvas_width_px / 3.78)}×{Math.round(tmpl.canvas_height_px / 3.78)} mm
-                </div>
-                <p className="truncate text-xs font-medium">{tmpl.name}</p>
-                <p className="text-xs text-muted-foreground">{tmpl.canvas_json.length} 个元素</p>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {userTemplates.map((tmpl) => {
+              const id = String(tmpl.id);
+              const isSelected = selectedId === id;
+              return (
+                <div
+                  key={tmpl.id}
+                  className={`group relative cursor-pointer rounded-lg border-2 p-3 transition-colors ${
+                    isSelected
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:border-primary/50"
+                  }`}
+                  onClick={() => {
+                    if (mode === "select") onSelect?.(recordToDefinition(tmpl), id, tmpl.name);
+                  }}
+                >
+                  <div className="mb-2 flex h-16 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+                    {Math.round(tmpl.canvas_width_px / 3.78)}×{Math.round(tmpl.canvas_height_px / 3.78)} mm
+                  </div>
+                  <p className="truncate text-xs font-medium">{tmpl.name}</p>
+                  <p className="text-xs text-muted-foreground">{tmpl.canvas_json.length} 个元素</p>
 
-                {selectableMode && canPreview && onPreview && (
-                  <Button
-                    size="icon"
-                    variant="secondary"
-                    className="absolute right-2 top-2 h-7 w-7 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
-                    title="预览模板"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onPreview(recordToDefinition(tmpl), tmpl.name);
-                    }}
-                  >
-                    <Eye className="size-3.5" />
-                  </Button>
-                )}
-
-                {mode === "manage" && (
-                  <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Link
-                      href={`/editor/${tmpl.id}`}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Pencil className="size-3" />
-                    </Link>
+                  {selectableMode && canPreview && onPreview && (
                     <Button
                       size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                      variant="secondary"
+                      className="absolute right-2 top-2 h-7 w-7 opacity-100 shadow-sm transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                      title="预览模板"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (confirm(`删除模板「${tmpl.name}」？此操作不可恢复`)) {
-                          deleteMut.mutate({ id: tmpl.id });
-                        }
+                        onPreview(recordToDefinition(tmpl), tmpl.name);
                       }}
                     >
-                      <Trash2 className="size-3" />
+                      <Eye className="size-3.5" />
                     </Button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                  )}
+
+                  {mode === "manage" && (
+                    <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Link
+                        href={`/editor/${tmpl.id}`}
+                        className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-accent"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Pencil className="size-3" />
+                      </Link>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`删除模板「${tmpl.name}」？此操作不可恢复`)) {
+                            deleteMut.mutate({ id: tmpl.id });
+                          }
+                        }}
+                      >
+                        <Trash2 className="size-3" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {(hasNextPage || loadedTemplateCount > 0) && (
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>已加载 {loadedTemplateCount} / {templateTotal} 个自定义模板</span>
+              {hasNextPage ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                >
+                  {isFetchingNextPage ? "加载中…" : "加载更多"}
+                </Button>
+              ) : null}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -300,7 +324,7 @@ export function TemplateGallery({
           <div>
             <p className="text-sm font-medium">我的模板</p>
             <p className="text-xs text-muted-foreground">
-              {isLoading ? "正在加载模板…" : `${userTemplates.length} 个自定义模板`}
+              {isLoading ? "正在加载模板…" : `${loadedTemplateCount} / ${templateTotal} 个自定义模板`}
             </p>
           </div>
           <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", userOpen && "rotate-180")} />

@@ -12,8 +12,8 @@ from app.api.helpers import (
     log_request_timing,
     to_label_history_response,
 )
-from app.db.fastapi_users_config import current_active_user
-from app.db.models import LabelBatch, LabelHistory, User
+from app.core.auth_deps import CurrentUser, get_current_user
+from app.db.models import LabelBatch, LabelHistory
 from app.db.session import get_db
 from app.schemas.label import (
     LabelCreateRequest,
@@ -61,7 +61,7 @@ async def labels_ping() -> dict[str, str]:
 async def generate_label(
     payload: LabelCreateRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> LabelGenerateResponse:
     """Save UDI metadata to history. Called only when user explicitly exports a label."""
     started_at = perf_counter()
@@ -72,7 +72,7 @@ async def generate_label(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     batch = LabelBatch(
-        user_id=user.id,
+        owner_id=current_user.id,
         name=f"单标签 {payload.di}",
         source="form",
         total_count=1,
@@ -82,7 +82,7 @@ async def generate_label(
     await db.flush()
 
     history = LabelHistory(
-        user_id=user.id,
+        owner_id=current_user.id,
         batch_id=batch.id,
         gtin=payload.di,
         batch_no=payload.lot,
@@ -121,7 +121,7 @@ PAGE_SIZE = 10
 @router.get("/history", response_model=LabelHistoryListResponse)
 async def list_label_history(
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    current_user: CurrentUser = Depends(get_current_user),
     gtin: Annotated[str | None, Query(min_length=14, max_length=14)] = None,
     batch_no: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
     cursor: Annotated[int | None, Query(gt=0)] = None,
@@ -129,19 +129,21 @@ async def list_label_history(
 ) -> LabelHistoryListResponse:
     """Cursor-based history list, scoped to authenticated user."""
     started_at = perf_counter()
-    user_id = user.id
+    owner_id = current_user.id
 
-    base_filter = [LabelHistory.user_id == user_id]
+    base_filter = [LabelHistory.owner_id == owner_id]
     if gtin:
         base_filter.append(LabelHistory.gtin == gtin)
     if batch_no:
         base_filter.append(LabelHistory.batch_no == batch_no)
 
     # COUNT does NOT include cursor — always reflects total matching records
-    count_result = await db.execute(
-        select(func.count()).where(*base_filter)
-    )
-    total = count_result.scalar_one()
+    total: int | None = None
+    if cursor is None:
+        count_result = await db.execute(
+            select(func.count()).where(*base_filter)
+        )
+        total = count_result.scalar_one()
 
     # Data query with optional cursor (id < cursor for "next page")
     data_filter = list(base_filter)
@@ -152,21 +154,23 @@ async def list_label_history(
         select(LabelHistory)
         .where(*data_filter)
         .order_by(LabelHistory.id.desc())
-        .limit(page_size)
+        .limit(page_size + 1)
     )
     records_result = await db.execute(stmt)
     records = records_result.scalars().all()
+    has_more = len(records) > page_size
+    page_records = records[:page_size]
 
-    items = [to_label_history_response(row) for row in records]
+    items = [to_label_history_response(row) for row in page_records]
 
     # next_cursor = smallest id in this page → used as cursor for the next page
-    next_cursor = records[-1].id if len(records) == page_size else None
+    next_cursor = page_records[-1].id if has_more and page_records else None
 
     log_request_timing(
         logger,
         "GET /labels/history",
         started_at,
-        user_id=user_id,
+        owner_id=owner_id,
         cursor=cursor,
         page_size=page_size,
         rows=len(items),
@@ -178,7 +182,7 @@ async def list_label_history(
 async def get_label_history_detail(
     history_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> LabelHistoryDetailResponse:
     """Return history record metadata. Barcode rendering is handled client-side via bwip-js."""
     started_at = perf_counter()
@@ -186,7 +190,7 @@ async def get_label_history_detail(
         db=db,
         model=LabelHistory,
         record_id=history_id,
-        user_id=user.id,
+        owner_id=current_user.id,
         object_name="history record",
         forbidden_detail="You do not have permission to view this record",
     )
@@ -201,13 +205,13 @@ async def get_label_history_detail(
 async def delete_label_history(
     history_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, str]:
     record = await get_owned_record_or_404(
         db=db,
         model=LabelHistory,
         record_id=history_id,
-        user_id=user.id,
+        owner_id=current_user.id,
         object_name="history record",
         forbidden_detail="You do not have permission to delete this record",
     )

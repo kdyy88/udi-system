@@ -29,7 +29,7 @@ class BatchCreateResponse(BaseModel):
 
 class LabelBatchSummary(BaseModel):
     id: int
-    user_id: int
+    owner_id: str
     name: str
     source: str
     total_count: int
@@ -38,7 +38,7 @@ class LabelBatchSummary(BaseModel):
 
 
 class LabelBatchListResponse(BaseModel):
-    total: int
+    total: int | None
     next_cursor: int | None
     items: list[LabelBatchSummary]
 

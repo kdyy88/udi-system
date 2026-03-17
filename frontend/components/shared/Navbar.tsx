@@ -17,6 +17,8 @@ import {
 import { clearAuthUser, getAuthUser, subscribeAuthUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
+const ENABLE_AUTH = process.env.NEXT_PUBLIC_ENABLE_AUTH === "true";
+
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -95,7 +97,7 @@ export function Navbar() {
             </DropdownMenu>
           </div>
 
-          {authUser ? (
+          {ENABLE_AUTH && authUser ? (
             <DropdownMenu>
               <DropdownMenuTrigger
                 className={buttonVariants({

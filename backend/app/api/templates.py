@@ -2,44 +2,68 @@ from datetime import UTC, datetime
 from time import perf_counter
 import logging
 
-from fastapi import APIRouter, Depends, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.helpers import get_owned_record_or_404, log_request_timing
-from app.db.fastapi_users_config import current_active_user
-from app.db.models import LabelTemplate, User
+from app.core.auth_deps import CurrentUser, get_current_user
+from app.db.models import LabelTemplate
 from app.db.session import get_db
 from app.schemas.template import TemplateCreate, TemplateListResponse, TemplateRead, TemplateUpdate
 
 router = APIRouter(prefix="/templates")
 logger = logging.getLogger(__name__)
 
+PAGE_SIZE = 24
+
 
 @router.get("", response_model=TemplateListResponse)
 async def list_templates(
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    current_user: CurrentUser = Depends(get_current_user),
+    cursor: Annotated[int | None, Query(gt=0)] = None,
+    page_size: Annotated[int, Query(ge=1, le=100)] = PAGE_SIZE,
 ) -> TemplateListResponse:
     started_at = perf_counter()
 
-    count_result = await db.execute(
-        select(func.count()).where(LabelTemplate.user_id == user.id)
-    )
-    total = count_result.scalar_one()
+    total: int | None = None
+    if cursor is None:
+        count_result = await db.execute(
+            select(func.count()).where(LabelTemplate.owner_id == current_user.id)
+        )
+        total = count_result.scalar_one()
+
+    filters = [LabelTemplate.owner_id == current_user.id]
+    if cursor is not None:
+        filters.append(LabelTemplate.id < cursor)
 
     stmt = (
         select(LabelTemplate)
-        .where(LabelTemplate.user_id == user.id)
+        .where(*filters)
         .order_by(LabelTemplate.id.desc())
+        .limit(page_size + 1)
     )
     result = await db.execute(stmt)
     rows = result.scalars().all()
+    has_more = len(rows) > page_size
+    page_rows = rows[:page_size]
+    next_cursor = page_rows[-1].id if has_more and page_rows else None
 
-    log_request_timing(logger, "GET /templates", started_at, user_id=user.id, count=len(rows))
+    log_request_timing(
+        logger,
+        "GET /templates",
+        started_at,
+        owner_id=current_user.id,
+        cursor=cursor,
+        rows=len(page_rows),
+    )
     return TemplateListResponse(
         total=total,
-        items=[TemplateRead.model_validate(r) for r in rows],
+        next_cursor=next_cursor,
+        items=[TemplateRead.model_validate(r) for r in page_rows],
     )
 
 
@@ -47,12 +71,12 @@ async def list_templates(
 async def create_template(
     payload: TemplateCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> TemplateRead:
     started_at = perf_counter()
 
     tmpl = LabelTemplate(
-        user_id=user.id,
+        owner_id=current_user.id,
         name=payload.name,
         description=payload.description,
         canvas_width_px=payload.canvas_width_px,
@@ -73,9 +97,9 @@ async def create_template(
 async def get_template(
     template_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> TemplateRead:
-    tmpl = await _get_owned(template_id, user.id, db)
+    tmpl = await _get_owned(template_id, current_user.id, db)
     return TemplateRead.model_validate(tmpl)
 
 
@@ -84,10 +108,10 @@ async def update_template(
     template_id: int,
     payload: TemplateUpdate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> TemplateRead:
     started_at = perf_counter()
-    tmpl = await _get_owned(template_id, user.id, db)
+    tmpl = await _get_owned(template_id, current_user.id, db)
 
     if payload.name is not None:
         tmpl.name = payload.name
@@ -112,21 +136,21 @@ async def update_template(
 async def delete_template(
     template_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_active_user),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> None:
-    tmpl = await _get_owned(template_id, user.id, db)
+    tmpl = await _get_owned(template_id, current_user.id, db)
     await db.delete(tmpl)
     await db.commit()
 
 
 # ─── helper ───────────────────────────────────────────────────────────────────
 
-async def _get_owned(template_id: int, user_id: int, db: AsyncSession) -> LabelTemplate:
+async def _get_owned(template_id: int, owner_id: str, db: AsyncSession) -> LabelTemplate:
     return await get_owned_record_or_404(
         db=db,
         model=LabelTemplate,
         record_id=template_id,
-        user_id=user_id,
+        owner_id=owner_id,
         object_name="template",
         forbidden_detail="access denied",
     )

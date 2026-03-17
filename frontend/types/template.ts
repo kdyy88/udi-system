@@ -63,7 +63,7 @@ export type CanvasDefinition = {
 
 export type LabelTemplateRecord = {
   id: number;
-  user_id: number;
+  owner_id: string;
   name: string;
   description: string | null;
   canvas_width_px: number;
@@ -74,7 +74,8 @@ export type LabelTemplateRecord = {
 };
 
 export type TemplateListResponse = {
-  total: number;
+  total: number | null;
+  next_cursor: number | null;
   items: LabelTemplateRecord[];
 };
 

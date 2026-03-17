@@ -42,6 +42,7 @@ export function useLabelHistory() {
   const [filterBatchNo, setFilterBatchNo] = useState("");
 
   const currentCursor = cursorStack[cursorStack.length - 1];
+  const firstPageQueryKey = ["label-history", authUser?.user_id, null, filterGtin, filterBatchNo] as const;
 
   const queryKey = ["label-history", authUser?.user_id, currentCursor, filterGtin, filterBatchNo] as const;
 
@@ -52,6 +53,9 @@ export function useLabelHistory() {
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
+
+  const firstPageData = queryClient.getQueryData<LabelHistoryListResponse>(firstPageQueryKey);
+  const total = data?.total ?? firstPageData?.total ?? 0;
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
@@ -101,7 +105,7 @@ export function useLabelHistory() {
   return {
     historyRows: data?.items ?? [],
     loadingHistory: isFetching,
-    total: data?.total ?? 0,
+    total,
     hasPrev: cursorStack.length > 1,
     hasNext: data?.next_cursor != null,
     filterGtin,

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { api } from "@/lib/api";
 import { BATCHES_API_ROUTES } from "@/features/labels/api/routes";
-import { exportBatchToZip, fetchAllBatchLabels } from "@/lib/batchExporter";
+import { exportBatchToZip, iterateBatchLabels } from "@/lib/batchExporter";
 import type { LabelBatchDetailResponse } from "@/types/batch";
 import type { LabelHistoryItem } from "@/types/udi";
 import type { CanvasDefinition } from "@/types/template";
@@ -24,6 +24,7 @@ async function fetchBatchDetail(
 ): Promise<LabelBatchDetailResponse> {
   const params: Record<string, string> = {
     page_size: String(PAGE_SIZE),
+    sort: "desc",
   };
   if (cursor != null) params.cursor = String(cursor);
   const res = await api.get<LabelBatchDetailResponse>(
@@ -73,15 +74,32 @@ export default function BatchDetailPage() {
   const batchId = parseInt(params.id ?? "0", 10);
 
   const { authUser, checkingAuth } = useRequireAuth();
-  const [cursor, setCursor] = useState<number | null>(null);
+  const [cursorHistory, setCursorHistory] = useState<Array<number | null>>([null]);
   const [downloading, setDownloading] = useState(false);
+  const currentCursor = cursorHistory[cursorHistory.length - 1] ?? null;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["batch-detail", batchId, authUser?.user_id, cursor],
-    queryFn: () => fetchBatchDetail(batchId, cursor),
+    queryKey: ["batch-detail", batchId, authUser?.user_id, currentCursor],
+    queryFn: () => fetchBatchDetail(batchId, currentCursor),
     enabled: !!authUser && batchId > 0,
     staleTime: 60_000,
   });
+
+  const hasPrev = cursorHistory.length > 1;
+  const hasNext = data?.next_cursor != null;
+
+  const goToFirstPage = useCallback(() => {
+    setCursorHistory([null]);
+  }, []);
+
+  const goToPrevPage = useCallback(() => {
+    setCursorHistory((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  }, []);
+
+  const goToNextPage = useCallback(() => {
+    if (data?.next_cursor == null) return;
+    setCursorHistory((prev) => [...prev, data.next_cursor]);
+  }, [data?.next_cursor]);
 
   const handleReDownload = useCallback(async () => {
     if (!authUser || !data) return;
@@ -92,11 +110,11 @@ export default function BatchDetailPage() {
       elements: [{ type: "barcode", id: "dm", x: 10, y: 10, w: 200, h: 200, barcodeType: "datamatrix" }],
     };
     try {
-      const labels = await fetchAllBatchLabels(batchId);
       const blob = await exportBatchToZip({
         batchId,
         batchName: data.name,
-        labels,
+        labels: iterateBatchLabels(batchId),
+        total: data.total_count,
         templateDefinition: data.template_definition ?? fallbackCanvas,
         onProgress: () => {},
       });
@@ -169,22 +187,30 @@ export default function BatchDetailPage() {
       {/* Pagination */}
       <div className="flex items-center justify-between text-sm">
         <span className="text-muted-foreground">
-          当前页 {data.labels.length} 条 / 共 {data.total_count} 条
+          第 {cursorHistory.length} 页 · 当前页 {data.labels.length} 条 / 共 {data.total_count} 条
         </span>
         <div className="flex gap-2">
           <Button
             variant="outline"
             size="sm"
-            disabled={cursor === null}
-            onClick={() => setCursor(null)}
+            disabled={!hasPrev}
+            onClick={goToPrevPage}
+          >
+            上一页
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!hasPrev}
+            onClick={goToFirstPage}
           >
             首页
           </Button>
           <Button
             variant="outline"
             size="sm"
-            disabled={!data.next_cursor}
-            onClick={() => setCursor(data.next_cursor)}
+            disabled={!hasNext}
+            onClick={goToNextPage}
           >
             下一页
           </Button>

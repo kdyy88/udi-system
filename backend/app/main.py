@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -10,16 +11,23 @@ from app.core.config import settings
 from app.db import models  # noqa: F401
 from app.db.redis import close_redis, init_redis
 from app.db.session import AsyncSessionLocal, Base, engine
-from app.services.auth_service import seed_default_users
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with AsyncSessionLocal() as db:
-        await seed_default_users(db)
+    logger.info("Skipping runtime metadata.create_all; schema is managed by Alembic migrations.")
+
+    if settings.ENABLE_AUTH:
+        from app.services.auth_service import seed_default_users
+        async with AsyncSessionLocal() as db:
+            await seed_default_users(db)
+        logger.info("Auth enabled — default users seeded.")
+    else:
+        logger.info("Auth disabled — running in pure-tool mode (users table skipped).")
+
     await init_redis()
     yield
     # Shutdown

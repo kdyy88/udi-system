@@ -19,6 +19,10 @@ class Settings:
     PROJECT_NAME: str = "GS1 UDI System API"
     VERSION: str = "0.1.0"
     API_V1_PREFIX: str = "/api/v1"
+    # ── Auth toggle ───────────────────────────────────────────────────────
+    # Set to "false" for pure-tool mode (no login required, all features open).
+    # Default "true" preserves existing auth behaviour for commercial deployments.
+    ENABLE_AUTH: bool = os.getenv("ENABLE_AUTH", "true").lower() == "true"
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL",
         "postgresql+asyncpg://gs1user:gs1pass@postgres:5432/gs1udi",

@@ -6,13 +6,15 @@ const BASE = "/api/v1/system";
 const OVERRIDES_KEY = ["system", "template-overrides"];
 
 type OverridesResponse = { value: Record<string, CanvasDefinition> };
+type QueryOptions = { enabled?: boolean };
 
 /** Fetches all admin-saved canvas overrides for system templates. */
-export function useSystemTemplateOverrides() {
+export function useSystemTemplateOverrides(options?: QueryOptions) {
   return useQuery<OverridesResponse>({
     queryKey: OVERRIDES_KEY,
     queryFn: () =>
       api.get<OverridesResponse>(`${BASE}/template-overrides`).then((r) => r.data),
+    enabled: options?.enabled ?? true,
     staleTime: 60_000,
   });
 }

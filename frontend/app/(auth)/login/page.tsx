@@ -58,7 +58,7 @@ export default function LoginPage() {
         <h1 className="text-2xl font-semibold">登录</h1>
         <p className="mt-2 text-sm text-muted-foreground">请先登录后再进行 UDI 操作。</p>
 
-        <form className="mt-6 space-y-4" onSubmit={onSubmit} autoComplete="on">
+        <form className="mt-6 space-y-4" onSubmit={onSubmit} autoComplete="off">
           <div className="space-y-2">
             <label htmlFor="login-username" className="text-sm font-medium">用户名</label>
             <Input
@@ -87,9 +87,7 @@ export default function LoginPage() {
           </Button>
         </form>
 
-        <p className="mt-4 text-xs text-muted-foreground">
-          演示账号：demo / demo123
-        </p>
+
 
         <div className="mt-3 flex justify-between text-sm">
           <Link href="/register" className="text-primary hover:underline">

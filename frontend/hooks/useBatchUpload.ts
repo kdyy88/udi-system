@@ -11,7 +11,7 @@ import { useCallback, useState } from "react";
 import { saveAs } from "file-saver";
 import { api } from "@/lib/api";
 import { parseExcelFile } from "@/lib/excelParser";
-import { exportBatchToZip, fetchAllBatchLabels } from "@/lib/batchExporter";
+import { exportBatchToZip, iterateBatchLabels } from "@/lib/batchExporter";
 import { BATCHES_API_ROUTES } from "@/features/labels/api/routes";
 import type { BatchCreateResponse, GenerateProgress, BatchPhase, ParsedRow } from "@/types/batch";
 import type { CanvasDefinition } from "@/types/template";
@@ -96,13 +96,11 @@ export function useBatchUpload() {
       set({ phase: "generating", batchId, progress: { current: 0, total: validRows.length } });
 
       try {
-        // Fetch the backend-persisted records (authoritative HRI strings)
-        const labels = await fetchAllBatchLabels(batchId);
-
         const blob = await exportBatchToZip({
           batchId,
           batchName,
-          labels,
+          labels: iterateBatchLabels(batchId),
+          total: validRows.length,
           templateDefinition,
           onProgress: (current, total) => set({ progress: { current, total } }),
         });

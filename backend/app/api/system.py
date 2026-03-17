@@ -18,8 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.api.helpers import log_request_timing
-from app.db.fastapi_users_config import current_admin_user
-from app.db.models import SystemConfig, User
+from app.core.auth_deps import CurrentUser, get_current_admin
+from app.db.models import SystemConfig
 from app.db.session import get_db
 
 router = APIRouter(prefix="/system")
@@ -50,7 +50,6 @@ async def _get_or_create_config(db: AsyncSession, key: str, default: Any = None)
 async def get_hidden_templates(db: AsyncSession = Depends(get_db)) -> HiddenTemplatesResponse:
     started_at = perf_counter()
     row = await _get_or_create_config(db, _KEY, [])
-    await db.commit()
     log_request_timing(logger, "GET /system/hidden-templates", started_at, count=len(row.value or []))
     return HiddenTemplatesResponse(value=row.value or [])
 
@@ -59,7 +58,7 @@ async def get_hidden_templates(db: AsyncSession = Depends(get_db)) -> HiddenTemp
 async def set_hidden_templates(
     payload: HiddenTemplatesRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_admin_user),
+    admin: CurrentUser = Depends(get_current_admin),
 ) -> HiddenTemplatesResponse:
     started_at = perf_counter()
     row = await _get_or_create_config(db, _KEY, [])
@@ -91,7 +90,6 @@ class TemplateOverrideRequest(BaseModel):
 async def get_template_overrides(db: AsyncSession = Depends(get_db)) -> TemplateOverridesResponse:
     started_at = perf_counter()
     row = await _get_or_create_config(db, _OVERRIDES_KEY, {})
-    await db.commit()
     log_request_timing(logger, "GET /system/template-overrides", started_at, count=len(row.value or {}))
     return TemplateOverridesResponse(value=row.value or {})
 
@@ -101,7 +99,7 @@ async def set_template_override(
     sys_id: str,
     payload: TemplateOverrideRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_admin_user),
+    admin: CurrentUser = Depends(get_current_admin),
 ) -> TemplateOverridesResponse:
     started_at = perf_counter()
     row = await _get_or_create_config(db, _OVERRIDES_KEY, {})
@@ -119,7 +117,7 @@ async def set_template_override(
 async def delete_template_override(
     sys_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_admin_user),
+    admin: CurrentUser = Depends(get_current_admin),
 ) -> TemplateOverridesResponse:
     started_at = perf_counter()
     row = await _get_or_create_config(db, _OVERRIDES_KEY, {})

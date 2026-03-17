@@ -17,12 +17,11 @@ import { toDisplayDate } from "@/lib/dateUtils";
 import { useBwipPreview } from "@/features/labels/preview/useLabelPreviewOrchestrator";
 import { exportPreviewNode, type PreviewExportFormat } from "@/features/labels/preview/export";
 import { saveLabelToBackend } from "@/features/labels/preview/save";
-import { getAuthUser } from "@/lib/auth";
 import type { PreviewSource } from "@/types/udi";
 import { useListTemplates } from "@/hooks/useLabelTemplates";
 import { recordToDefinition } from "@/types/template";
 import { renderCustomSvg, type LabelSvgInput } from "@/lib/svgTemplates";
-import { applyOverrides, SYSTEM_TEMPLATES } from "@/lib/systemTemplates";
+import { applyOverrides } from "@/lib/systemTemplates";
 import { useSystemTemplateOverrides } from "@/hooks/useSystemTemplateOverrides";
 
 type PreviewDialogProps = {
@@ -41,14 +40,15 @@ export function PreviewDialog({
   onSaved,
 }: PreviewDialogProps) {
   const previewRef = useRef<HTMLDivElement>(null);
+  const savedPreviewSourceRef = useRef<PreviewSource | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
-  const authUser = getAuthUser();
-  const { data: templateList } = useListTemplates();
-  const templates = templateList?.items ?? [];
+  const shouldLoadTemplateData = open && previewSource !== null;
+  const { data: templateList } = useListTemplates({ enabled: shouldLoadTemplateData, fetchAll: true, pageSize: 50 });
+  const templates = useMemo(() => templateList?.items ?? [], [templateList]);
 
-  const { data: overridesData } = useSystemTemplateOverrides();
+  const { data: overridesData } = useSystemTemplateOverrides({ enabled: shouldLoadTemplateData });
   const effectiveSystemTemplates = applyOverrides(overridesData?.value ?? {});
 
   // Extract canonical fields regardless of source kind
@@ -108,13 +108,12 @@ export function PreviewDialog({
       return;
     }
 
-    // Brand-new label: save to backend before downloading
-    if (previewSource.kind === "local") {
-      const user = getAuthUser();
-      if (!user) { toast.error("请先登录"); return; }
+    // Brand-new label: save to backend once before the first download
+    if (previewSource.kind === "local" && savedPreviewSourceRef.current !== previewSource) {
       setSaving(true);
       try {
         await saveLabelToBackend(previewSource.data);
+        savedPreviewSourceRef.current = previewSource;
         toast.success("已保存至历史记录");
         onSaved?.();
       } catch {
@@ -167,7 +166,7 @@ export function PreviewDialog({
           <DialogTitle>条码实时预览</DialogTitle>
           <DialogDescription>
             {previewSource?.kind === "local"
-              ? "点击下载按钮将同时保存至历史记录"
+              ? "首次下载将保存至历史记录，后续仅执行导出"
               : "历史记录预览 · 支持下载"}
           </DialogDescription>
         </DialogHeader>

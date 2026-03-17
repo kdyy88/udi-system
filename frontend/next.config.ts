@@ -1,4 +1,10 @@
+import path from "path";
+import dotenv from "dotenv";
 import type { NextConfig } from "next";
+
+// Load the workspace-root .env so NEXT_PUBLIC_* vars are available
+// even when `next dev` is started from the frontend/ directory.
+dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 
 const isDev = process.env.NODE_ENV !== "production";
 
