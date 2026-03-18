@@ -3,6 +3,16 @@ import bwipjs from "@bwip-js/browser";
 export const DUAL_BARCODE_WIDTH = 320;
 export const DUAL_BARCODE_HEIGHT = 48;
 
+// ─── Generic bwip-js helper ───────────────────────────────────────────────────
+
+function makeSvg(options: Parameters<typeof bwipjs.toSVG>[0]): string | null {
+  try {
+    return bwipjs.toSVG(options);
+  } catch {
+    return null;
+  }
+}
+
 const BWIP_GS1_128_OPTIONS = {
   bcid: "gs1-128",
   includetext: false,
@@ -20,14 +30,7 @@ const BWIP_GS1_DATAMATRIX_OPTIONS = {
 } as const;
 
 function toGs1SvgWithBwip(hriText: string): string | null {
-  try {
-    return bwipjs.toSVG({
-      ...BWIP_GS1_128_OPTIONS,
-      text: hriText,
-    });
-  } catch {
-    return null;
-  }
+  return makeSvg({ ...BWIP_GS1_128_OPTIONS, text: hriText });
 }
 
 function normalizeLinearSvg(svg: string): string {
@@ -83,13 +86,87 @@ export function createNormalizedGs1Svg(hriText: string): string | null {
  * @param hriText - Full HRI string e.g. "(01)09506…(17)290228(10)LOT001"
  */
 export function createDataMatrixSvg(hriText: string): string | null {
-  try {
-    return bwipjs.toSVG({
-      ...BWIP_GS1_DATAMATRIX_OPTIONS,
-      text: hriText,
-    });
-  } catch {
-    return null;
-  }
+  return makeSvg({ ...BWIP_GS1_DATAMATRIX_OPTIONS, text: hriText });
+}
+
+// ─── Additional barcode types ─────────────────────────────────────────────────
+
+/**
+ * Render a QR Code as an SVG string.
+ * @param text - Arbitrary text to encode.
+ */
+export function createQrSvg(text: string): string | null {
+  return makeSvg({
+    bcid: "qrcode",
+    text,
+    scale: 3,
+    includetext: false,
+  });
+}
+
+/**
+ * Render an Aztec Code as an SVG string.
+ * @param text - Arbitrary text to encode.
+ */
+export function createAztecSvg(text: string): string | null {
+  return makeSvg({
+    bcid: "azteccode",
+    text,
+    scale: 3,
+    includetext: false,
+  });
+}
+
+/**
+ * Render an EAN-13 barcode as an SVG string (normalised, no whitespace padding).
+ * @param text - 13-digit numeric string (or 12 digits + check-digit auto-computed).
+ */
+export function createEan13Svg(text: string): string | null {
+  const raw = makeSvg({
+    bcid: "ean13",
+    text,
+    scale: 2,
+    includetext: true,
+    textxalign: "center",
+    height: 20,
+    paddingwidth: 0,
+    paddingheight: 0,
+  });
+  return raw ? normalizeLinearSvg(raw) : null;
+}
+
+/**
+ * Render an EAN-8 barcode as an SVG string.
+ * @param text - 8-digit numeric string.
+ */
+export function createEan8Svg(text: string): string | null {
+  const raw = makeSvg({
+    bcid: "ean8",
+    text,
+    scale: 2,
+    includetext: true,
+    textxalign: "center",
+    height: 18,
+    paddingwidth: 0,
+    paddingheight: 0,
+  });
+  return raw ? normalizeLinearSvg(raw) : null;
+}
+
+/**
+ * Render a Code 128 barcode as an SVG string.
+ * @param text - Arbitrary ASCII text to encode.
+ */
+export function createCode128Svg(text: string): string | null {
+  const raw = makeSvg({
+    bcid: "code128",
+    text,
+    scale: 2,
+    includetext: false,
+    height: 10,
+    paddingwidth: 0,
+    paddingheight: 0,
+  });
+  return raw ? normalizeLinearSvg(raw) : null;
 }
 

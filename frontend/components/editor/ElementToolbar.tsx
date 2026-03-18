@@ -77,13 +77,14 @@ export function ElementToolbar() {
       <div className="space-y-1">
         <p className="text-xs font-medium text-muted-foreground">添加元素</p>
         <div className="flex flex-col gap-1.5">
+          <p className="text-xs text-muted-foreground/70">GS1 条码</p>
           <Button
             size="sm"
             variant="outline"
             className="justify-start"
             onClick={() => addElement(makeBarcode("datamatrix"))}
           >
-            ▦ DataMatrix 条码
+            ▦ DataMatrix
           </Button>
           <Button
             size="sm"
@@ -91,8 +92,43 @@ export function ElementToolbar() {
             className="justify-start"
             onClick={() => addElement(makeBarcode("gs1128"))}
           >
-            ▬ GS1-128 条码
+            ▬ GS1-128
           </Button>
+          <p className="text-xs text-muted-foreground/70 mt-1">二维码</p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="justify-start"
+            onClick={() => addElement(makeBarcode("qrcode"))}
+          >
+            ⊞ QR Code
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="justify-start"
+            onClick={() => addElement(makeBarcode("aztec"))}
+          >
+            ⊡ Aztec Code
+          </Button>
+          <p className="text-xs text-muted-foreground/70 mt-1">线性条码</p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="justify-start"
+            onClick={() => addElement(makeBarcode("ean13"))}
+          >
+            ▌ EAN-13
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="justify-start"
+            onClick={() => addElement(makeBarcode("code128"))}
+          >
+            ▬ Code 128
+          </Button>
+          <p className="text-xs text-muted-foreground/70 mt-1">文本 / 图形</p>
           <Button
             size="sm"
             variant="outline"

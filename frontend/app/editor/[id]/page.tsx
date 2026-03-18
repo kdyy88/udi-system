@@ -19,7 +19,7 @@ export default function EditEditorPage({ params }: { params: Promise<{ id: strin
 
   const { authUser, checkingAuth } = useRequireAuth();
   const [templateName, setTemplateName] = useState("");
-  const [zoom, setZoom] = useState(1);
+  const [displayScale, setDisplayScale] = useState(2);
   const loadedTemplateIdRef = useRef<number | null>(null);
 
   const loadCanvas = useCanvasStore((s) => s.loadCanvas);
@@ -73,14 +73,14 @@ export default function EditEditorPage({ params }: { params: Promise<{ id: strin
           <span>缩放</span>
           <input
             type="range"
-            min={0.3}
-            max={2}
-            step={0.05}
-            value={zoom}
-            onChange={(e) => setZoom(parseFloat(e.target.value))}
-            className="w-24"
+            min={0.5}
+            max={8}
+            step={0.25}
+            value={displayScale}
+            onChange={(e) => setDisplayScale(parseFloat(e.target.value))}
+            className="w-28"
           />
-          <span>{Math.round(zoom * 100)}%</span>
+          <span className="w-10 text-right tabular-nums">{displayScale.toFixed(2)}×</span>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" onClick={handleSave} disabled={updateTemplate.isPending}>
@@ -95,8 +95,8 @@ export default function EditEditorPage({ params }: { params: Promise<{ id: strin
         <aside className="w-52 shrink-0 overflow-y-auto border-r bg-muted/20 p-3">
           <ElementToolbar />
         </aside>
-        <div className="flex flex-1 items-start justify-center overflow-auto p-6">
-          <Canvas zoom={zoom} />
+        <div className="relative flex-1 overflow-hidden bg-muted/30">
+          <Canvas displayScale={displayScale} />
         </div>
         <aside className="w-60 shrink-0 overflow-y-auto border-l bg-muted/20 p-3">
           <PropertiesPanel />

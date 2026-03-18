@@ -9,9 +9,29 @@ export const GS1_AI_LABELS: Record<GS1AiField, string> = {
   "21": "(21) 序列号",
 };
 
+// ─── Mixed-text segment model ─────────────────────────────────────────────────
+
+/**
+ * A TextSegment is one "pill" inside a mixed text element.
+ * - kind "literal": raw text the user typed
+ * - kind "variable": a GS1 AI field that resolves to live data at print/export time
+ */
+export type TextSegment =
+  | { kind: "literal"; text: string }
+  | { kind: "variable"; ai: GS1AiField };
+
 // ─── Canvas Element DSL ───────────────────────────────────────────────────────
 
-export type BarcodeType = "datamatrix" | "gs1128" | "gs1128_di" | "gs1128_pi";
+export type BarcodeType =
+  | "datamatrix"
+  | "gs1128"
+  | "gs1128_di"
+  | "gs1128_pi"
+  | "qrcode"
+  | "aztec"
+  | "ean13"
+  | "ean8"
+  | "code128";
 
 export type BarcodeElement = {
   type: "barcode";
@@ -21,6 +41,11 @@ export type BarcodeElement = {
   w: number;        // px
   h: number;        // px
   barcodeType: BarcodeType;
+  /**
+   * For non-GS1 barcode types (qrcode, aztec, code128) the user can supply
+   * a static text string to encode.  If omitted the HRI string is used.
+   */
+  customText?: string;
 };
 
 export type TextElement = {
@@ -30,8 +55,15 @@ export type TextElement = {
   y: number;        // px
   w: number;        // px
   h: number;        // px
+  /** Legacy plain-text content.  Only used when `segments` is absent. */
   content: string;
+  /** Legacy single-field binding.  Only used when `segments` is absent. */
   fieldBinding: GS1AiField | null;
+  /**
+   * Mixed-text segment list (v2 model).
+   * When present, `content` and `fieldBinding` are ignored.
+   */
+  segments?: TextSegment[];
   fontSize: number; // px
   fontWeight: "normal" | "bold";
   textAlign: "left" | "center" | "right";

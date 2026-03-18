@@ -17,10 +17,12 @@ import {
   AlignVerticalDistributeCenter,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-import { useCanvasStore, barcodeAspectRatio } from "@/stores/canvasStore";
+import { useCanvasStore, barcodeAspectRatio, isCustomTextType } from "@/stores/canvasStore";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { pxToMm, mmToPx, GS1_AI_LABELS, type GS1AiField, type BarcodeType } from "@/types/template";
+import { SegmentEditor } from "@/components/editor/SegmentEditor";
+import { getSegments } from "@/lib/segmentEngine";
+import { pxToMm, mmToPx, type BarcodeType } from "@/types/template";
 
 export function PropertiesPanel() {
   const selectedIds = useCanvasStore(useShallow((s) => s.selectedIds));
@@ -234,42 +236,48 @@ export function PropertiesPanel() {
                 }
               }}
             >
-              <option value="datamatrix">DataMatrix</option>
-              <option value="gs1128">GS1-128 (全部)</option>
-              <option value="gs1128_di">GS1-128 DI</option>
-              <option value="gs1128_pi">GS1-128 PI</option>
+              <optgroup label="GS1 条码">
+                <option value="datamatrix">DataMatrix</option>
+                <option value="gs1128">GS1-128 (全部)</option>
+                <option value="gs1128_di">GS1-128 DI</option>
+                <option value="gs1128_pi">GS1-128 PI</option>
+              </optgroup>
+              <optgroup label="二维码">
+                <option value="qrcode">QR Code</option>
+                <option value="aztec">Aztec Code</option>
+              </optgroup>
+              <optgroup label="线性条码">
+                <option value="ean13">EAN-13</option>
+                <option value="ean8">EAN-8</option>
+                <option value="code128">Code 128</option>
+              </optgroup>
             </select>
           </Row>
+          {isCustomTextType(el.barcodeType) && (
+            <Row label="内容">
+              <Input
+                className="h-7 text-sm"
+                placeholder="留空则使用完整 HRI"
+                value={el.customText ?? ""}
+                onChange={(e) => update({ customText: e.target.value || undefined })}
+              />
+            </Row>
+          )}
         </Section>
       )}
 
       {/* Text-specific */}
       {el.type === "text" && (
         <Section title="文本设置">
-          <Row label="字段绑定">
-            <select
-              className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm"
-              value={el.fieldBinding ?? ""}
-              onChange={(e) => {
-                const v = e.target.value;
-                update({ fieldBinding: v === "" ? null : (v as GS1AiField) });
-              }}
-            >
-              <option value="">静态文本</option>
-              {(Object.entries(GS1_AI_LABELS) as [GS1AiField, string][]).map(([ai, label]) => (
-                <option key={ai} value={ai}>{label}</option>
-              ))}
-            </select>
-          </Row>
-          {!el.fieldBinding && (
-            <Row label="内容">
-              <Input
-                className="h-7 text-sm"
-                value={el.content}
-                onChange={(e) => update({ content: e.target.value })}
-              />
-            </Row>
-          )}
+          <div className="space-y-1">
+            <span className="text-xs text-muted-foreground">
+              内容<span className="ml-1 text-muted-foreground/60">（输入文本，键入 / 插入变量）</span>
+            </span>
+            <SegmentEditor
+              segments={getSegments(el)}
+              onChange={(segs) => update({ segments: segs })}
+            />
+          </div>
           <Row label="字号 (px)">
             <NumInput value={el.fontSize} min={6} max={200} step={1} onChange={(v) => update({ fontSize: v })} />
           </Row>

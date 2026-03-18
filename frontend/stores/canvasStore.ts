@@ -9,6 +9,7 @@ import type {
   CanvasDefinition,
   BarcodeType,
   GS1AiField,
+  TextSegment,
 } from "@/types/template";
 
 type CanvasElementPatch = {
@@ -18,8 +19,10 @@ type CanvasElementPatch = {
   w?: number;
   h?: number;
   barcodeType?: BarcodeType;
+  customText?: string;
   content?: string;
   fieldBinding?: GS1AiField | null;
+  segments?: TextSegment[];
   fontSize?: number;
   fontWeight?: TextElement["fontWeight"];
   textAlign?: TextElement["textAlign"];
@@ -75,7 +78,17 @@ function withElementId(element: CanvasElementInput, id: string): CanvasElement {
 }
 
 function isBarcodeType(value: unknown): value is BarcodeType {
-  return value === "datamatrix" || value === "gs1128" || value === "gs1128_di" || value === "gs1128_pi";
+  return (
+    value === "datamatrix" ||
+    value === "gs1128" ||
+    value === "gs1128_di" ||
+    value === "gs1128_pi" ||
+    value === "qrcode" ||
+    value === "aztec" ||
+    value === "ean13" ||
+    value === "ean8" ||
+    value === "code128"
+  );
 }
 
 function isGs1AiField(value: unknown): value is GS1AiField {
@@ -104,6 +117,7 @@ function mergeElement(element: CanvasElement, patch: CanvasElementPatch): Canvas
         w: patch.w ?? element.w,
         h: patch.h ?? element.h,
         barcodeType: isBarcodeType(patch.barcodeType) ? patch.barcodeType : element.barcodeType,
+        customText: "customText" in patch ? patch.customText : element.customText,
       };
     case "text":
       return {
@@ -118,6 +132,7 @@ function mergeElement(element: CanvasElement, patch: CanvasElementPatch): Canvas
           : isGs1AiField(patch.fieldBinding)
             ? patch.fieldBinding
             : element.fieldBinding,
+        segments: "segments" in patch ? patch.segments : element.segments,
         fontSize: "fontSize" in patch && typeof patch.fontSize === "number" ? patch.fontSize : element.fontSize,
         fontWeight: isFontWeight(patch.fontWeight) ? patch.fontWeight : element.fontWeight,
         textAlign: isTextAlign(patch.textAlign) ? patch.textAlign : element.textAlign,
@@ -231,13 +246,22 @@ export const useCanvasStore = create<CanvasStore>()(
   ),
 );
 
-export const GS1_128_ASPECT_RATIO = 6; // width / height
-
-export const DATAMATRIX_ASPECT_RATIO = 1; // width / height = 1:1
+export const GS1_128_ASPECT_RATIO = 6;  // width / height (linear barcodes are wide)
+export const DATAMATRIX_ASPECT_RATIO = 1; // 1:1 square
+export const QR_ASPECT_RATIO = 1;         // 1:1 square
+export const AZTEC_ASPECT_RATIO = 1;      // 1:1 square
+export const EAN13_ASPECT_RATIO = 1.5;   // ~68:45 ≈ 1.5:1
+export const EAN8_ASPECT_RATIO  = 1.2;   // narrow EAN-8
+export const CODE128_ASPECT_RATIO = 4;   // linear, wide
 
 export function barcodeAspectRatio(barcodeType: BarcodeType): number | false {
-  if (isGs1128Type(barcodeType)) return GS1_128_ASPECT_RATIO;
+  if (isGs1128Type(barcodeType))  return GS1_128_ASPECT_RATIO;
   if (barcodeType === "datamatrix") return DATAMATRIX_ASPECT_RATIO;
+  if (barcodeType === "qrcode")    return QR_ASPECT_RATIO;
+  if (barcodeType === "aztec")     return AZTEC_ASPECT_RATIO;
+  if (barcodeType === "ean13")     return EAN13_ASPECT_RATIO;
+  if (barcodeType === "ean8")      return EAN8_ASPECT_RATIO;
+  if (barcodeType === "code128")   return CODE128_ASPECT_RATIO;
   return false;
 }
 
@@ -245,10 +269,25 @@ export function isGs1128Type(barcodeType: BarcodeType): boolean {
   return barcodeType === "gs1128" || barcodeType === "gs1128_di" || barcodeType === "gs1128_pi";
 }
 
+/** True for non-GS1 barcode types that accept free-form customText. */
+export function isCustomTextType(barcodeType: BarcodeType): boolean {
+  return barcodeType === "qrcode" || barcodeType === "aztec" || barcodeType === "code128";
+}
+
 export function makeBarcode(barcodeType: BarcodeType = "datamatrix"): Omit<BarcodeElement, "id"> {
   if (isGs1128Type(barcodeType)) {
     return { type: "barcode", x: 10, y: 10, w: 240, h: 40, barcodeType };
   }
+  if (barcodeType === "ean13") {
+    return { type: "barcode", x: 10, y: 10, w: 120, h: 80, barcodeType };
+  }
+  if (barcodeType === "ean8") {
+    return { type: "barcode", x: 10, y: 10, w: 90, h: 75, barcodeType };
+  }
+  if (barcodeType === "code128") {
+    return { type: "barcode", x: 10, y: 10, w: 200, h: 50, barcodeType };
+  }
+  // square types (datamatrix, qrcode, aztec)
   return { type: "barcode", x: 10, y: 10, w: 100, h: 100, barcodeType };
 }
 
