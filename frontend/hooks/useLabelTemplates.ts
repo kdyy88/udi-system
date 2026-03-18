@@ -1,33 +1,74 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useInfiniteQuery, useMutation, useQueryClient, useQuery, type InfiniteData } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { LabelTemplateRecord, TemplateListResponse, CanvasDefinition } from "@/types/template";
 
 const BASE = "/api/v1/templates";
+const DEFAULT_PAGE_SIZE = 24;
+
+type QueryOptions = {
+  enabled?: boolean;
+  pageSize?: number;
+  fetchAll?: boolean;
+};
+
+async function fetchTemplatePage(cursor: number | null, pageSize: number): Promise<TemplateListResponse> {
+  return api.get<TemplateListResponse>(BASE, {
+    params: {
+      cursor: cursor ?? undefined,
+      page_size: pageSize,
+    },
+  }).then((r) => r.data);
+}
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export function useListTemplates(userId: number) {
-  return useQuery<TemplateListResponse>({
-    queryKey: ["templates", userId],
-    queryFn: () =>
-      api.get<TemplateListResponse>(BASE, { params: { user_id: userId } }).then((r) => r.data),
-    enabled: userId > 0,
+export function useListTemplates(options?: QueryOptions) {
+  const pageSize = options?.pageSize ?? DEFAULT_PAGE_SIZE;
+  const query = useInfiniteQuery<TemplateListResponse, Error, InfiniteData<TemplateListResponse>, [string, number], number | null>({
+    queryKey: ["templates", pageSize],
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) => fetchTemplatePage(pageParam, pageSize),
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled: options?.enabled ?? true,
   });
+
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = query.data?.pages[0]?.total ?? items.length;
+  const nextCursor = query.data?.pages[query.data.pages.length - 1]?.next_cursor ?? null;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+
+  useEffect(() => {
+    if (options?.fetchAll && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [options?.fetchAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  return {
+    ...query,
+    data: {
+      total,
+      next_cursor: nextCursor,
+      items,
+    },
+    items,
+    total,
+    nextCursor,
+  };
 }
 
-export function useGetTemplate(id: number, userId: number) {
+export function useGetTemplate(id: number) {
   return useQuery<LabelTemplateRecord>({
     queryKey: ["template", id],
     queryFn: () =>
-      api.get<LabelTemplateRecord>(`${BASE}/${id}`, { params: { user_id: userId } }).then((r) => r.data),
-    enabled: id > 0 && userId > 0,
+      api.get<LabelTemplateRecord>(`${BASE}/${id}`).then((r) => r.data),
+    enabled: id > 0,
   });
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 type CreatePayload = {
-  userId: number;
   name: string;
   description?: string;
   canvas: CanvasDefinition;
@@ -36,10 +77,10 @@ type CreatePayload = {
 export function useCreateTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, name, description, canvas }: CreatePayload) =>
+    mutationFn: ({ name, description, canvas }: CreatePayload) =>
       api
         .post<LabelTemplateRecord>(
-          `${BASE}?user_id=${userId}`,
+          BASE,
           {
             name,
             description: description ?? null,
@@ -49,15 +90,14 @@ export function useCreateTemplate() {
           },
         )
         .then((r) => r.data),
-    onSuccess: (_data, vars) => {
-      void qc.invalidateQueries({ queryKey: ["templates", vars.userId] });
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["templates"] });
     },
   });
 }
 
 type UpdatePayload = {
   id: number;
-  userId: number;
   name?: string;
   description?: string;
   canvas?: CanvasDefinition;
@@ -66,9 +106,9 @@ type UpdatePayload = {
 export function useUpdateTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, userId, name, description, canvas }: UpdatePayload) =>
+    mutationFn: ({ id, name, description, canvas }: UpdatePayload) =>
       api
-        .put<LabelTemplateRecord>(`${BASE}/${id}?user_id=${userId}`, {
+        .put<LabelTemplateRecord>(`${BASE}/${id}`, {
           name,
           description,
           canvas_width_px: canvas?.widthPx,
@@ -78,7 +118,7 @@ export function useUpdateTemplate() {
         .then((r) => r.data),
     onSuccess: (data, vars) => {
       qc.setQueryData(["template", vars.id], data);
-      void qc.invalidateQueries({ queryKey: ["templates", vars.userId] });
+      void qc.invalidateQueries({ queryKey: ["templates"] });
     },
   });
 }
@@ -86,10 +126,10 @@ export function useUpdateTemplate() {
 export function useDeleteTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, userId }: { id: number; userId: number }) =>
-      api.delete(`${BASE}/${id}?user_id=${userId}`),
-    onSuccess: (_data, vars) => {
-      void qc.invalidateQueries({ queryKey: ["templates", vars.userId] });
+    mutationFn: ({ id }: { id: number }) =>
+      api.delete(`${BASE}/${id}`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["templates"] });
     },
   });
 }

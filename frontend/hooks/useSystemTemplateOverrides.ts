@@ -6,19 +6,21 @@ const BASE = "/api/v1/system";
 const OVERRIDES_KEY = ["system", "template-overrides"];
 
 type OverridesResponse = { value: Record<string, CanvasDefinition> };
+type QueryOptions = { enabled?: boolean };
 
 /** Fetches all admin-saved canvas overrides for system templates. */
-export function useSystemTemplateOverrides() {
+export function useSystemTemplateOverrides(options?: QueryOptions) {
   return useQuery<OverridesResponse>({
     queryKey: OVERRIDES_KEY,
     queryFn: () =>
       api.get<OverridesResponse>(`${BASE}/template-overrides`).then((r) => r.data),
+    enabled: options?.enabled ?? true,
     staleTime: 60_000,
   });
 }
 
 /** Admin-only: saves (or replaces) the canvas for one system template. */
-export function useSaveSystemTemplateOverride(userId: number) {
+export function useSaveSystemTemplateOverride() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ sysId, canvas }: { sysId: string; canvas: CanvasDefinition }) =>
@@ -30,7 +32,6 @@ export function useSaveSystemTemplateOverride(userId: number) {
             heightPx: canvas.heightPx,
             elements: canvas.elements,
           },
-          { params: { user_id: userId } },
         )
         .then((r) => r.data),
     onSuccess: (data) => {
@@ -40,14 +41,13 @@ export function useSaveSystemTemplateOverride(userId: number) {
 }
 
 /** Admin-only: removes the canvas override, restoring the factory default. */
-export function useDeleteSystemTemplateOverride(userId: number) {
+export function useDeleteSystemTemplateOverride() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (sysId: string) =>
       api
         .delete<OverridesResponse>(
           `${BASE}/template-override/${sysId}`,
-          { params: { user_id: userId } },
         )
         .then((r) => r.data),
     onSuccess: (data) => {

@@ -1,11 +1,5 @@
 import type { ReactNode } from "react";
-import { toDisplayDate } from "@/lib/dateUtils";
-import {
-  createNormalizedGs1Svg,
-  DUAL_BARCODE_HEIGHT,
-  DUAL_BARCODE_WIDTH,
-} from "@/features/labels/preview/barcode-svg";
-import { findAiText, findAiValue } from "@/lib/gs1Utils";
+import { findAiText } from "@/lib/gs1Utils";
 
 /** Shape of data when using backend-rendered PNG barcodes (legacy / fallback path). */
 type PreviewPngData = {
@@ -52,12 +46,6 @@ function renderBarcode(content: string, format: BarcodeFormat, className: string
   return <img src={src} alt="Barcode" />;
 }
 
-function barcodeSrc(content: string, format: BarcodeFormat): string {
-  return format === "svg"
-    ? `data:image/svg+xml;utf8,${encodeURIComponent(content)}`
-    : `data:image/png;base64,${content}`;
-}
-
 function getBarcodePayload(preview: PreviewData) {
   if (preview.format === "svg") {
     return {
@@ -82,12 +70,8 @@ function getBarcodePayload(preview: PreviewData) {
 
 export function PreviewTemplateCanvas({
   preview,
-  expiryDisplay,
 }: PreviewTemplateCanvasProps) {
   const payload = getBarcodePayload(preview);
-  const productionDisplay = toDisplayDate(findAiValue(payload.hri, "11"));
-  const expiryDisplayFromHri = toDisplayDate(findAiValue(payload.hri, "17"));
-  const finalExpiryDisplay = expiryDisplayFromHri !== "-" ? expiryDisplayFromHri : expiryDisplay;
 
   // Compact layout: DataMatrix left + AI text right
   return (

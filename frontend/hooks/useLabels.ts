@@ -35,6 +35,16 @@ export function useLabels() {
       return false;
     }
 
+    if (
+      !formData.lot.trim() &&
+      !formData.expiryDate.trim() &&
+      !formData.serial.trim() &&
+      !formData.productionDate.trim()
+    ) {
+      toast.error("至少需要填写一个 PI：批号、生产日期、有效期或序列号");
+      return false;
+    }
+
     const params = {
       di: formData.di,
       lot: formData.lot || null,

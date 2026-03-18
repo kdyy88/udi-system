@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Save, RotateCcw } from "lucide-react";
+import { Save, RotateCcw, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Canvas } from "@/components/editor/Canvas";
@@ -11,49 +11,71 @@ import { ElementToolbar } from "@/components/editor/ElementToolbar";
 import { PropertiesPanel } from "@/components/editor/PropertiesPanel";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useCreateTemplate } from "@/hooks/useLabelTemplates";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useSaveSystemTemplateOverride } from "@/hooks/useSystemTemplateOverrides";
-import { clearAuthUser, getAuthUser, isAdmin, type AuthUser } from "@/lib/auth";
+import { isAdmin } from "@/lib/auth";
 import { SYSTEM_TEMPLATES } from "@/lib/systemTemplates";
+import { downloadCanvasAsSvg } from "@/lib/canvasToSvg";
+import { api } from "@/lib/api";
+import type { CanvasDefinition } from "@/types/template";
 
-export default function NewEditorPage() {
+/** Mock HRI used when exporting from the editor (no real label data available). */
+const EDITOR_MOCK_HRI =
+  "(01)09506000134376(17)260101(10)LOT001(21)SN123456(11)240101";
+
+function NewEditorPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [templateName, setTemplateName] = useState("未命名模板");
-  const [zoom, setZoom] = useState(1);
-  // When admin edits a system template directly, this holds the sys template ID
-  const [editingSysId, setEditingSysId] = useState<string | null>(null);
+  const { authUser, checkingAuth } = useRequireAuth();
+  const seed = searchParams.get("seed");
+  const seededSystemTemplate = seed
+    ? SYSTEM_TEMPLATES.find((template) => template.id === seed) ?? null
+    : null;
+  const [templateName, setTemplateName] = useState(seededSystemTemplate?.name ?? "未命名模板");
+  // displayScale: every design-unit coordinate is multiplied by this factor before
+  // writing to the DOM (no CSS transform is used), so selection outlines & resize
+  // handles are always exactly 1 physical pixel regardless of the current scale.
+  const [displayScale, setDisplayScale] = useState(2);
+  const canvasAreaRef = useRef<HTMLDivElement>(null);
+  const canvasWidthPx = useCanvasStore((s) => s.widthPx);
+  const canvasHeightPx = useCanvasStore((s) => s.heightPx);
+  const editingSysId = authUser && seededSystemTemplate && isAdmin(authUser)
+    ? seededSystemTemplate.id
+    : null;
+
+  // Auto-fit: find the largest displayScale that keeps the card inside the area.
+  const computeFitScale = useCallback(() => {
+    const el = canvasAreaRef.current;
+    if (!el || canvasWidthPx === 0 || canvasHeightPx === 0) return;
+    const pad = 64;
+    const fitW = (el.clientWidth  - pad) / canvasWidthPx;
+    const fitH = (el.clientHeight - pad) / canvasHeightPx;
+    setDisplayScale(Math.min(fitW, fitH, 6));
+  }, [canvasWidthPx, canvasHeightPx]);
 
   const resetCanvas = useCanvasStore((s) => s.resetCanvas);
   const loadCanvas = useCanvasStore((s) => s.loadCanvas);
   const canvasDef = useCanvasStore((s) => s.canvasDef);
   const createTemplate = useCreateTemplate();
-  const saveOverride = useSaveSystemTemplateOverride(authUser?.user_id ?? 0);
+  const saveOverride = useSaveSystemTemplateOverride();
 
   useEffect(() => {
-    const user = getAuthUser();
-    if (!user) { router.replace("/login"); return; }
-    setAuthUser(user);
-    setCheckingAuth(false);
+    if (!authUser) return;
 
-    // If ?seed=sys-xxx is provided, pre-load that system template
-    const seed = searchParams.get("seed");
-    if (seed) {
-      const sysTmpl = SYSTEM_TEMPLATES.find((t) => t.id === seed);
-      if (sysTmpl) {
-        loadCanvas(sysTmpl.canvas);
-        setTemplateName(sysTmpl.name);
-        // admin edits the original; non-admin would not reach this flow
-        if (isAdmin(user)) {
-          setEditingSysId(seed);
-        }
-        return;
-      }
+    if (seededSystemTemplate) {
+      api
+        .get<{ value: Record<string, CanvasDefinition> }>("/api/v1/system/template-overrides")
+        .then((r) => {
+          const override = r.data?.value?.[seededSystemTemplate.id];
+          loadCanvas(override ?? seededSystemTemplate.canvas);
+        })
+        .catch(() => {
+          loadCanvas(seededSystemTemplate.canvas);
+        });
+      return;
     }
     resetCanvas();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authUser, seededSystemTemplate, loadCanvas, resetCanvas]);
 
   if (checkingAuth || !authUser) {
     return <main className="p-6 text-sm text-muted-foreground">正在检查登录状态…</main>;
@@ -86,7 +108,6 @@ export default function NewEditorPage() {
     const name = editingSysId ? `${templateName} 副本` : templateName;
     try {
       const result = await createTemplate.mutateAsync({
-        userId: authUser.user_id,
         name,
         canvas: def,
       });
@@ -98,6 +119,22 @@ export default function NewEditorPage() {
   };
 
   const isBusy = createTemplate.isPending || saveOverride.isPending;
+
+  /** Export the current canvas as a vector SVG using mock data. */
+  const handleExportSvg = () => {
+    const def = canvasDef();
+    if (def.elements.length === 0) {
+      toast.warning("画布为空，无法导出");
+      return;
+    }
+    try {
+      downloadCanvasAsSvg(def, { hri: EDITOR_MOCK_HRI }, `${templateName || "label"}.svg`);
+      toast.success("SVG 已导出（使用模拟数据）");
+    } catch (err) {
+      console.error("SVG export failed", err);
+      toast.error("SVG 导出失败，请重试");
+    }
+  };
 
   return (
     <main className="flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden">
@@ -113,25 +150,28 @@ export default function NewEditorPage() {
           <span>缩放</span>
           <input
             type="range"
-            min={0.3}
-            max={2}
-            step={0.05}
-            value={zoom}
-            onChange={(e) => setZoom(parseFloat(e.target.value))}
-            className="w-24"
+            min={0.5}
+            max={8}
+            step={0.25}
+            value={displayScale}
+            onChange={(e) => setDisplayScale(parseFloat(e.target.value))}
+            className="w-28"
           />
-          <span>{Math.round(zoom * 100)}%</span>
+          <span className="w-10 text-right tabular-nums">{displayScale.toFixed(2)}×</span>
+          <button
+            type="button"
+            className="ml-1 rounded border px-1.5 py-0.5 text-xs hover:bg-muted"
+            onClick={computeFitScale}
+            title="自动适配窗口"
+          >
+            适配
+          </button>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{authUser.username}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { clearAuthUser(); router.replace("/login"); }}
-          >
-            退出
+          <Button size="sm" variant="ghost" onClick={handleExportSvg} title="导出 SVG（模拟数据）">
+            <FileDown className="mr-1.5 size-4" />
+            导出 SVG
           </Button>
-
           {editingSysId ? (
             /* Admin editing a system template: primary = update original, secondary = save as copy */
             <>
@@ -165,20 +205,31 @@ export default function NewEditorPage() {
       {/* Editor body */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left toolbar */}
-        <aside className="w-52 shrink-0 overflow-y-auto border-r bg-muted/20 p-3">
+        <aside className="w-72 shrink-0 overflow-y-auto border-r bg-muted/20 p-3">
           <ElementToolbar />
         </aside>
 
-        {/* Canvas area */}
-        <div className="flex flex-1 items-start justify-center overflow-auto p-6">
-          <Canvas zoom={zoom} />
+        {/* Canvas area — no scrollbars; Canvas fills this area and centres the card internally */}
+        <div
+          ref={canvasAreaRef}
+          className="relative flex-1 overflow-hidden bg-muted/30"
+        >
+          <Canvas displayScale={displayScale} />
         </div>
 
         {/* Right properties */}
-        <aside className="w-60 shrink-0 overflow-y-auto border-l bg-muted/20 p-3">
+        <aside className="w-72 shrink-0 overflow-y-auto border-l bg-muted/20 p-3">
           <PropertiesPanel />
         </aside>
       </div>
     </main>
+  );
+}
+
+export default function NewEditorPage() {
+  return (
+    <Suspense fallback={<main className="p-6 text-sm text-muted-foreground">正在加载编辑器…</main>}>
+      <NewEditorPageContent />
+    </Suspense>
   );
 }

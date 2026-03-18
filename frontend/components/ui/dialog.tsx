@@ -42,10 +42,14 @@ export function DialogHeader({ children }: { children: ReactNode }) {
   return <div className="space-y-1.5">{children}</div>;
 }
 
-export function DialogTitle({ children }: { children: ReactNode }) {
-  return <h3 className="text-lg font-semibold tracking-tight">{children}</h3>;
+export function DialogTitle({ children, className }: { children: ReactNode; className?: string }) {
+  return <h3 className={cn("text-lg font-semibold tracking-tight", className)}>{children}</h3>;
 }
 
 export function DialogDescription({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
+}
+
+export function DialogFooter({ children }: { children: ReactNode }) {
+  return <div className="mt-6 flex justify-end gap-2">{children}</div>;
 }

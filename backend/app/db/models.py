@@ -1,15 +1,38 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.config import settings
 from app.db.session import Base
+
+
+if settings.ENABLE_AUTH:
+    from fastapi_users.db import SQLAlchemyBaseUserTable as _BaseUserTable
+
+    class User(_BaseUserTable[int], Base):
+
+        __tablename__ = "users"
+
+        id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+        username: Mapped[str | None] = mapped_column(
+            String(100), unique=True, index=True, nullable=True
+        )
+        role: Mapped[str] = mapped_column(
+            String(50), default="operator", server_default="operator"
+        )
+        created_at: Mapped[datetime] = mapped_column(
+            DateTime(timezone=True), default=lambda: datetime.now(UTC)
+        )
+else:
+    User = None
 
 
 class SystemConfig(Base):
     """Single-row-per-key store for global application settings."""
+
     __tablename__ = "system_config"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -20,14 +43,15 @@ class SystemConfig(Base):
 class LabelBatch(Base):
     __tablename__ = "label_batch"
     __table_args__ = (
-        Index("ix_lb_user_id_desc", "user_id", "id"),
+        Index("ix_lb_owner_id_desc", "owner_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True, default="anonymous")
     name: Mapped[str] = mapped_column(String(200))
     source: Mapped[str] = mapped_column(String(20), default="form")  # "excel" | "form"
     total_count: Mapped[int] = mapped_column(Integer, default=1)
+    template_definition: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
@@ -39,9 +63,12 @@ class LabelBatch(Base):
 
 class LabelTemplate(Base):
     __tablename__ = "label_template"
+    __table_args__ = (
+        Index("ix_lt_owner_id_desc", "owner_id", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True, default="anonymous")
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     canvas_width_px: Mapped[float] = mapped_column(Numeric(8, 2), default=378.0)
@@ -55,27 +82,15 @@ class LabelTemplate(Base):
     )
 
 
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    username: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(50), default="operator")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
-    )
-
-
 class LabelHistory(Base):
     __tablename__ = "label_history"
     __table_args__ = (
-        Index("ix_lh_user_created", "user_id", "created_at"),
-        Index("ix_lh_user_id_desc", "user_id", "id"),
+        Index("ix_lh_owner_created", "owner_id", "created_at"),
+        Index("ix_lh_owner_id_desc", "owner_id", "id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    owner_id: Mapped[str] = mapped_column(String(128), index=True, default="anonymous")
     gtin: Mapped[str] = mapped_column(String(14), index=True)
     batch_no: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     expiry_date: Mapped[str | None] = mapped_column(String(8), nullable=True)

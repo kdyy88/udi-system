@@ -1,36 +1,152 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { ChevronDown, LogOut, Menu, Settings, UserCircle2 } from "lucide-react";
+
+import { buttonVariants } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { clearAuthUser, getAuthUser, isAdmin, subscribeAuthUser } from "@/lib/auth";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+
+const ENABLE_AUTH = process.env.NEXT_PUBLIC_ENABLE_AUTH === "true";
 
 export function Navbar() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const authUser = useSyncExternalStore(subscribeAuthUser, getAuthUser, () => null);
+  const isLoggedIn = ENABLE_AUTH ? !!authUser : true;
+
+  const navItems = [
+    { href: "/", label: "标签生成", active: pathname === "/" },
+    { href: "/batch", label: "批量打码", active: pathname === "/batch" },
+    { href: "/history", label: "历史台账", active: pathname.startsWith("/history") },
+    {
+      href: "/templates",
+      label: "标签模板",
+      active: pathname.startsWith("/templates") || pathname.startsWith("/editor"),
+    },
+  ];
+
+  const handleLogout = () => {
+    // Only clear the auth session — remembered credentials (prefill) are kept
+    // intentionally so the user can log back in without re-typing.
+    // The session cookie is invalidated server-side via /auth/jwt/logout.
+    clearAuthUser();
+    router.replace("/login");
+  };
+
   return (
     <header className="border-b">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <span className="font-semibold">GS1 UDI System</span>
-        <nav className="flex items-center gap-1 text-sm font-medium">
-          <Link
-            href="/"
-            className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            标签生成
+      <div className="grid h-14 w-full grid-cols-[minmax(max-content,1fr)_minmax(0,72rem)_minmax(max-content,1fr)] items-center gap-3 px-4 sm:gap-4 sm:px-6">
+        <div className="flex min-w-0 items-center justify-start">
+          <Link href="/" className="flex items-center gap-2 font-semibold whitespace-nowrap">
+            <span className="inline-flex size-8 items-center justify-center rounded-md bg-primary/10 text-sm font-bold text-primary">
+              GS1
+            </span>
+            <span className="hidden sm:inline">UDI System</span>
           </Link>
-          <Link
-            href="/batch"
-            className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            批量打码
-          </Link>
-          <Link
-            href="/history"
-            className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            历史台账
-          </Link>
-          <Link
-            href="/templates"
-            className="rounded-md px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            标签模板
-          </Link>
-        </nav>
+        </div>
+
+        <div className="hidden min-w-0 px-6 xl:block">
+          <div className="w-full">
+            <nav className="flex items-center justify-end gap-1 text-sm font-medium">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={isLoggedIn ? item.href : "/login"}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 transition-colors",
+                    item.active && isLoggedIn
+                      ? "bg-muted text-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    !isLoggedIn && "opacity-50"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+        </div>
+
+        <div className="flex min-w-0 items-center justify-end gap-2 xl:gap-3">
+          <div className="xl:hidden">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="打开导航菜单"
+                className={buttonVariants({ variant: "outline", size: "icon" })}
+              >
+                  <Menu className="size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuLabel>页面导航</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {navItems.map((item) => (
+                  <DropdownMenuItem
+                    key={item.href}
+                    className={cn(item.active && isLoggedIn && "bg-muted text-foreground")}
+                    onClick={() => router.push(isLoggedIn ? item.href : "/login")}
+                  >
+                    {item.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {ENABLE_AUTH && !authUser && (
+            <Button size="sm" variant="default" onClick={() => router.push("/login")}>
+              登录
+            </Button>
+          )}
+
+          {ENABLE_AUTH && authUser ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={buttonVariants({
+                  variant: "outline",
+                  size: "sm",
+                  className: "max-w-[44vw] gap-2 sm:max-w-xs xl:max-w-none",
+                })}
+              >
+                  <UserCircle2 className="size-4 text-muted-foreground" />
+                  <span className="hidden text-muted-foreground sm:inline">当前用户：</span>
+                  <span className="truncate">{authUser.username}</span>
+                  <ChevronDown className="size-4 text-muted-foreground" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel className="flex items-center gap-2">
+                  <UserCircle2 className="size-4 text-muted-foreground" />
+                  <div className="flex flex-col text-left">
+                    <span>{authUser.username}</span>
+                    <span className="text-xs font-normal text-muted-foreground">已登录用户</span>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {isAdmin(authUser) && (
+                  <DropdownMenuItem className="gap-2" onClick={() => router.push("/admin")}>
+                    <Settings className="size-4 text-muted-foreground" />
+                    管理后台
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem className="gap-2 text-destructive" onClick={handleLogout}>
+                  <LogOut className="size-4" />
+                  退出登录
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+        </div>
       </div>
     </header>
   );

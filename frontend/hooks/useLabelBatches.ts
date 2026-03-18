@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { BATCHES_API_ROUTES } from "@/features/labels/api/routes";
 import type { LabelBatchListResponse } from "@/types/batch";
@@ -20,12 +20,10 @@ type CursorHistory = {
 };
 
 async function fetchBatches(
-  userId: number,
   cursor: number | null | undefined,
   pageSize: number,
 ): Promise<LabelBatchListResponse> {
   const params: Record<string, string> = {
-    user_id: String(userId),
     page_size: String(pageSize),
   };
   if (cursor != null) params.cursor = String(cursor);
@@ -35,21 +33,24 @@ async function fetchBatches(
 }
 
 export function useLabelBatches(authUser: AuthUser | null) {
+  const queryClient = useQueryClient();
   const [cursorHistory, setCursorHistory] = useState<CursorHistory>({
     stack: [null],
     current: 0,
   });
 
   const currentCursor = cursorHistory.stack[cursorHistory.current] ?? null;
+  const firstPageQueryKey = ["batches", authUser?.user_id, null, PAGE_SIZE] as const;
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["batches", authUser?.user_id, currentCursor, PAGE_SIZE],
-    queryFn: () => fetchBatches(authUser!.user_id, currentCursor, PAGE_SIZE),
+    queryFn: () => fetchBatches(currentCursor, PAGE_SIZE),
     enabled: authUser !== null,
     staleTime: 30_000,
   });
 
-  const total = data?.total ?? 0;
+  const firstPageData = queryClient.getQueryData<LabelBatchListResponse>(firstPageQueryKey);
+  const total = data?.total ?? firstPageData?.total ?? 0;
   const items = data?.items ?? [];
   const nextCursor = data?.next_cursor ?? null;
   const hasPrev = cursorHistory.current > 0;

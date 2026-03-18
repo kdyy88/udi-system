@@ -4,14 +4,20 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY . .
 
 ARG BACKEND_URL=http://127.0.0.1:8000
+ARG NEXT_PUBLIC_ENABLE_AUTH=true
+
 ENV BACKEND_URL=${BACKEND_URL}
+ENV NEXT_PUBLIC_ENABLE_AUTH=${NEXT_PUBLIC_ENABLE_AUTH}
 ENV NODE_ENV=production
+# Cap Next.js build memory so it doesn't OOM-kill on 2 GB servers.
+# The build will be slower but won't crash. Raise if you have more RAM.
+ENV NODE_OPTIONS=--max-old-space-size=512
 
 RUN pnpm build
 

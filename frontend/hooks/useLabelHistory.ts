@@ -17,14 +17,12 @@ import type { LabelHistoryListResponse } from "@/types/udi";
 const PAGE_SIZE = 10;
 
 async function fetchHistoryPage(
-  userId: number,
   cursor: number | null,
   gtin: string,
   batchNo: string
 ): Promise<LabelHistoryListResponse> {
   const { data } = await api.get<LabelHistoryListResponse>(LABELS_API_ROUTES.history, {
     params: {
-      user_id: userId,
       gtin: gtin || undefined,
       batch_no: batchNo || undefined,
       cursor: cursor ?? undefined,
@@ -44,22 +42,24 @@ export function useLabelHistory() {
   const [filterBatchNo, setFilterBatchNo] = useState("");
 
   const currentCursor = cursorStack[cursorStack.length - 1];
+  const firstPageQueryKey = ["label-history", authUser?.user_id, null, filterGtin, filterBatchNo] as const;
 
   const queryKey = ["label-history", authUser?.user_id, currentCursor, filterGtin, filterBatchNo] as const;
 
   const { data, isFetching } = useQuery({
     queryKey,
-    queryFn: () => fetchHistoryPage(authUser!.user_id, currentCursor, filterGtin, filterBatchNo),
+    queryFn: () => fetchHistoryPage(currentCursor, filterGtin, filterBatchNo),
     enabled: !!authUser,
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
 
+  const firstPageData = queryClient.getQueryData<LabelHistoryListResponse>(firstPageQueryKey);
+  const total = data?.total ?? firstPageData?.total ?? 0;
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
-      api.delete(LABELS_API_ROUTES.historyById(id), {
-        params: { user_id: authUser?.user_id },
-      }),
+      api.delete(LABELS_API_ROUTES.historyById(id)),
     onSuccess: () => {
       toast.success("删除成功");
       void queryClient.invalidateQueries({
@@ -105,7 +105,7 @@ export function useLabelHistory() {
   return {
     historyRows: data?.items ?? [],
     loadingHistory: isFetching,
-    total: data?.total ?? 0,
+    total,
     hasPrev: cursorStack.length > 1,
     hasNext: data?.next_cursor != null,
     filterGtin,

@@ -10,6 +10,7 @@
 
 import type { CanvasDefinition, BarcodeType } from "@/types/template";
 import { findAiText as _findAiText, findAiValue as _findAiValue, escapeXml as _escapeXml } from "@/lib/gs1Utils";
+import { resolveSegments, legacyToSegments, getSegments } from "@/lib/segmentEngine";
 
 export type LabelSvgInput = {
   gtin: string;
@@ -26,6 +27,12 @@ export type LabelSvgInput = {
   gs1128DiSvg: string | null;
   /** bwip-js toSVG() output for PI-only GS1-128: all AIs except (01) */
   gs1128PiSvg: string | null;
+  /** Optional pre-rendered SVG outputs for additional barcode types */
+  qrSvg?: string | null;
+  aztecSvg?: string | null;
+  ean13Svg?: string | null;
+  ean8Svg?: string | null;
+  code128Svg?: string | null;
 };
 
 // ─── SVG helpers ─────────────────────────────────────────────────────────────
@@ -65,6 +72,11 @@ function pickBarcodeSvg(barcodeType: BarcodeType, input: LabelSvgInput): string 
     case "gs1128":     return input.gs1128Svg;
     case "gs1128_di":  return input.gs1128DiSvg ?? input.gs1128Svg;
     case "gs1128_pi":  return input.gs1128PiSvg ?? input.gs1128Svg;
+    case "qrcode":     return input.qrSvg ?? null;
+    case "aztec":      return input.aztecSvg ?? null;
+    case "ean13":      return input.ean13Svg ?? null;
+    case "ean8":       return input.ean8Svg ?? null;
+    case "code128":    return input.code128Svg ?? null;
   }
 }
 
@@ -94,12 +106,8 @@ export function renderCustomSvg(input: LabelSvgInput, canvas: CanvasDefinition):
       }
 
       case "text": {
-        const resolvedText = el.fieldBinding
-          ? (() => {
-              const val = _findAiValue(input.hri, el.fieldBinding);
-              return val ? `(${el.fieldBinding})${val}` : el.content;
-            })()
-          : el.content;
+        const segments = getSegments(el);
+        const resolvedText = resolveSegments(segments, input.hri);
 
         const anchor =
           el.textAlign === "center" ? "middle" : el.textAlign === "right" ? "end" : "start";
@@ -109,10 +117,11 @@ export function renderCustomSvg(input: LabelSvgInput, canvas: CanvasDefinition):
             : el.textAlign === "right"
               ? el.x + el.w
               : el.x;
-        const ty = el.y + el.fontSize;
+        // Vertically centre text within its box, matching the editor's flex-items-center.
+        const ty = el.y + el.h / 2;
 
         parts.push(
-          `<text x="${tx}" y="${ty}" text-anchor="${anchor}" font-family="sans-serif" font-size="${el.fontSize}" font-weight="${el.fontWeight}" fill="#111">${_escapeXml(resolvedText)}</text>`,
+          `<text x="${tx}" y="${ty}" dominant-baseline="central" text-anchor="${anchor}" font-family="sans-serif" font-size="${el.fontSize}" font-weight="${el.fontWeight}" fill="#111">${_escapeXml(resolvedText)}</text>`,
         );
         break;
       }
@@ -126,7 +135,10 @@ export function renderCustomSvg(input: LabelSvgInput, canvas: CanvasDefinition):
     }
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  // Render at 3× design units so the output opens at a readable size in any
+  // SVG viewer, consistent with the editor's default displayScale.
+  const scale = 3;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W * scale}" height="${H * scale}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="white"/>
   ${parts.join("\n  ")}
 </svg>`;

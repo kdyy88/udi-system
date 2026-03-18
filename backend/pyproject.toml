@@ -12,14 +12,27 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.48",
     "asyncpg>=0.30.0",
     "alembic>=1.13.0",
-    "anyio>=4.0.0",
     "openpyxl>=3.1.5",
     "pandas>=3.0.1",
     "pillow>=10.0.0",
     "python-multipart>=0.0.22",
+    # .env auto-loading in local dev
+    "python-dotenv>=1.0.0",
+    # Auth
+    "fastapi-users[sqlalchemy]>=13.0.0",
+    "PyJWT>=2.8.0",
+    "bcrypt>=4.0.0",
+    # Cache / rate limiting  (redis v7+ bundles asyncio support natively)
+    "redis>=5.0.0",
+    # Email
+    "resend>=2.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    # anyio pytest plugin for async test coroutines (@pytest.mark.anyio)
+    # anyio is a transitive dep of fastapi/starlette; pinned here for the test marker.
+    # The app always runs on asyncio (uvicorn), so no trio interaction occurs.
+    "anyio>=4.0.0",
 ]

@@ -24,31 +24,41 @@ const FETCH_PAGE_SIZE = 200;
 
 // ─── fetch ───────────────────────────────────────────────────────────────────
 
-export async function fetchAllBatchLabels(
+async function fetchBatchLabelsPage(
   batchId: number,
-  userId: number,
-): Promise<LabelHistoryItem[]> {
-  const all: LabelHistoryItem[] = [];
+  cursor: number | undefined,
+): Promise<{
+  labels: LabelHistoryItem[];
+  next_cursor: number | null;
+}> {
+  const params: Record<string, string> = {
+    page_size: String(FETCH_PAGE_SIZE),
+    sort: "asc",
+  };
+  if (cursor != null) params.cursor = String(cursor);
+
+  const res = await api.get<{
+    labels: LabelHistoryItem[];
+    next_cursor: number | null;
+  }>(BATCHES_API_ROUTES.batchById(batchId), { params });
+
+  return res.data;
+}
+
+export async function* iterateBatchLabels(
+  batchId: number,
+): AsyncGenerator<LabelHistoryItem, void, void> {
   let cursor: number | undefined = undefined;
 
   while (true) {
-    const params: Record<string, string> = {
-      user_id: String(userId),
-      page_size: String(FETCH_PAGE_SIZE),
-    };
-    if (cursor != null) params.cursor = String(cursor);
+    const page = await fetchBatchLabelsPage(batchId, cursor);
+    for (const label of page.labels) {
+      yield label;
+    }
 
-    const res = await api.get<{
-      labels: LabelHistoryItem[];
-      next_cursor: number | null;
-    }>(BATCHES_API_ROUTES.batchById(batchId), { params });
-
-    all.push(...res.data.labels);
-    if (!res.data.next_cursor) break;
-    cursor = res.data.next_cursor;
+    if (!page.next_cursor) break;
+    cursor = page.next_cursor;
   }
-
-  return all;
 }
 
 // ─── render one label as SVG (no DOM) ────────────────────────────────────────
@@ -86,7 +96,8 @@ function renderLabelToSvg(
 export type BatchExportOptions = {
   batchId: number;
   batchName: string;
-  labels: LabelHistoryItem[];
+  labels: Iterable<LabelHistoryItem> | AsyncIterable<LabelHistoryItem>;
+  total: number;
   templateDefinition: CanvasDefinition;
   onProgress: (current: number, total: number) => void;
 };
@@ -95,24 +106,27 @@ export type BatchExportOptions = {
  * Render every label to SVG (pure vector, no DOM) and pack into a ZIP.
  */
 export async function exportBatchToZip(options: BatchExportOptions): Promise<Blob> {
-  const { labels, templateDefinition, onProgress } = options;
+  const { labels, total, templateDefinition, onProgress } = options;
   const zip = new JSZip();
   const folder = zip.folder("labels")!;
 
-  for (let i = 0; i < labels.length; i++) {
-    const label = labels[i];
+  let index = 0;
+  for await (const label of labels) {
     const serial4 = label.serial_no?.trim()
       ? label.serial_no.trim().replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 20)
-      : String(i + 1).padStart(4, "0");
+      : String(index + 1).padStart(4, "0");
 
     const svg = renderLabelToSvg(label, templateDefinition);
     if (svg) {
       folder.file(`${label.gtin}_${serial4}.svg`, svg);
     }
 
-    onProgress(i + 1, labels.length);
+    index += 1;
+    onProgress(index, total);
     // Yield to keep the UI responsive during large batches
-    await new Promise((r) => setTimeout(r, 0));
+    if (index % 20 === 0) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
   }
 
   return zip.generateAsync({ type: "blob", compression: "DEFLATE" });

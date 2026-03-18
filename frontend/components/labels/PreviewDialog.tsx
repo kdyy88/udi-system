@@ -4,7 +4,6 @@ import { useRef, useMemo, useState } from "react";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 
-import { PreviewTemplateCanvas } from "./PreviewTemplateCanvas";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,11 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { toDisplayDate } from "@/lib/dateUtils";
 import { useBwipPreview } from "@/features/labels/preview/useLabelPreviewOrchestrator";
 import { exportPreviewNode, type PreviewExportFormat } from "@/features/labels/preview/export";
 import { saveLabelToBackend } from "@/features/labels/preview/save";
-import { getAuthUser } from "@/lib/auth";
 import type { PreviewSource } from "@/types/udi";
 import { useListTemplates } from "@/hooks/useLabelTemplates";
 import { recordToDefinition } from "@/types/template";
@@ -41,17 +38,16 @@ export function PreviewDialog({
   onSaved,
 }: PreviewDialogProps) {
   const previewRef = useRef<HTMLDivElement>(null);
+  const savedPreviewSourceRef = useRef<PreviewSource | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
-  const authUser = getAuthUser();
-  const { data: templateList } = useListTemplates(authUser?.user_id ?? 0);
-  const templates = templateList?.items ?? [];
+  const shouldLoadTemplateData = open && previewSource !== null;
+  const { data: templateList } = useListTemplates({ enabled: shouldLoadTemplateData, fetchAll: true, pageSize: 50 });
+  const templates = useMemo(() => templateList?.items ?? [], [templateList]);
 
-  const { data: overridesData } = useSystemTemplateOverrides();
+  const { data: overridesData } = useSystemTemplateOverrides({ enabled: shouldLoadTemplateData });
   const effectiveSystemTemplates = applyOverrides(overridesData?.value ?? {});
-
-  // Extract canonical fields regardless of source kind
   const previewMeta = useMemo(() => {
     if (!previewSource) return null;
     if (previewSource.kind === "local") {
@@ -70,12 +66,10 @@ export function PreviewDialog({
     };
   }, [previewSource, expiryDate]);
 
-  // All barcodes rendered synchronously in-browser — zero network requests
   const { datamatrixSvg, gs1128Svg, gs1128DiOnlySvg, gs1128PiOnlySvg, error: barcodeError } = useBwipPreview(
     previewMeta?.hri
   );
 
-  // Build LabelSvgInput for custom template rendering
   const labelSvgInput = useMemo<LabelSvgInput | null>(() => {
     if (!previewMeta || !datamatrixSvg) return null;
     return {
@@ -88,19 +82,51 @@ export function PreviewDialog({
     };
   }, [previewMeta, datamatrixSvg, gs1128Svg, gs1128DiOnlySvg, gs1128PiOnlySvg]);
 
-  // Render custom template SVG string when a template is selected
-  const customSvgString = useMemo(() => {
-    if (!selectedTemplateId || !labelSvgInput) return null;
+  const selectedSystemTemplate = useMemo(
+    () => effectiveSystemTemplates.find((template) => template.id === selectedTemplateId) ?? null,
+    [effectiveSystemTemplates, selectedTemplateId],
+  );
+
+  const selectedUserTemplate = useMemo(
+    () => templates.find((template) => String(template.id) === selectedTemplateId) ?? null,
+    [selectedTemplateId, templates],
+  );
+
+  // Always produce an SVG so that what the user *sees* == what gets *exported*.
+  // If a template is selected, use it; otherwise fall back to the compact
+  // system template (sys-compact) so the preview is consistent with the export.
+  const effectiveSvgString = useMemo(() => {
+    if (!labelSvgInput) return null;
+    if (selectedSystemTemplate) return renderCustomSvg(labelSvgInput, selectedSystemTemplate.canvas);
+    if (selectedUserTemplate) return renderCustomSvg(labelSvgInput, recordToDefinition(selectedUserTemplate));
+    // Default layout: use sys-compact (or first system template)
+    const defaultCanvas =
+      (effectiveSystemTemplates.find((t) => t.id === "sys-compact") ??
+        effectiveSystemTemplates[0] ??
+        SYSTEM_TEMPLATES[0]
+      ).canvas;
+    return renderCustomSvg(labelSvgInput, defaultCanvas);
+  }, [labelSvgInput, selectedSystemTemplate, selectedUserTemplate, effectiveSystemTemplates]);
+
+  const savePreviewIfNeeded = async () => {
+    if (previewSource?.kind !== "local" || savedPreviewSourceRef.current === previewSource) {
+      return true;
+    }
+
+    setSaving(true);
     try {
-      // System template
-      const sysTmpl = effectiveSystemTemplates.find((t) => t.id === selectedTemplateId);
-      if (sysTmpl) return renderCustomSvg(labelSvgInput, sysTmpl.canvas);
-      // User template
-      const record = templates.find((t) => String(t.id) === selectedTemplateId);
-      if (record) return renderCustomSvg(labelSvgInput, recordToDefinition(record));
-    } catch { /* fall through to default */ }
-    return null;
-  }, [selectedTemplateId, labelSvgInput, templates, effectiveSystemTemplates]);
+      await saveLabelToBackend(previewSource.data);
+      savedPreviewSourceRef.current = previewSource;
+      toast.success("已保存至历史记录");
+      onSaved?.();
+      return true;
+    } catch {
+      toast.error("保存失败，请检查网络后重试");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleDownload = async (format: PreviewExportFormat) => {
     if (!previewSource || !previewMeta) {
@@ -108,26 +134,13 @@ export function PreviewDialog({
       return;
     }
 
-    // Brand-new label: save to backend before downloading
-    if (previewSource.kind === "local") {
-      const user = getAuthUser();
-      if (!user) { toast.error("请先登录"); return; }
-      setSaving(true);
-      try {
-        await saveLabelToBackend(previewSource.data, user.user_id);
-        toast.success("已保存至历史记录");
-        onSaved?.();
-      } catch {
-        toast.error("保存失败，请检查网络后重试");
-        setSaving(false);
-        return;
-      }
-      setSaving(false);
+    const saved = await savePreviewIfNeeded();
+    if (!saved) {
+      return;
     }
 
-    // For custom template + SVG format, download the raw SVG string directly
-    if (customSvgString && format === "svg") {
-      const blob = new Blob([customSvgString], { type: "image/svg+xml" });
+    if (effectiveSvgString && format === "svg") {
+      const blob = new Blob([effectiveSvgString], { type: "image/svg+xml" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -137,7 +150,11 @@ export function PreviewDialog({
       return;
     }
 
-    if (!previewRef.current) { toast.error("暂无可下载的预览内容"); return; }
+    if (!previewRef.current) {
+      toast.error("暂无可下载的预览内容");
+      return;
+    }
+
     try {
       await exportPreviewNode(previewRef.current, "label", format);
     } catch {
@@ -145,20 +162,7 @@ export function PreviewDialog({
     }
   };
 
-  // Build canvas preview data (always SVG via bwip-js)
-  const canvasPreview = useMemo(() => {
-    if (!previewMeta || !gs1128Svg || !datamatrixSvg) return null;
-    return {
-      format: "svg" as const,
-      data: {
-        hri: previewMeta.hri,
-        datamatrix_svg: datamatrixSvg,
-        gs1_128_svg: gs1128Svg,
-        gs1_128_di_only_svg: gs1128DiOnlySvg,
-        gs1_128_pi_only_svg: gs1128PiOnlySvg,
-      },
-    };
-  }, [previewMeta, datamatrixSvg, gs1128Svg, gs1128DiOnlySvg, gs1128PiOnlySvg]);
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -167,14 +171,13 @@ export function PreviewDialog({
           <DialogTitle>条码实时预览</DialogTitle>
           <DialogDescription>
             {previewSource?.kind === "local"
-              ? "点击下载按钮将同时保存至历史记录"
+              ? "首次下载将保存至历史记录，后续仅执行导出"
               : "历史记录预览 · 支持下载"}
           </DialogDescription>
         </DialogHeader>
 
         {previewSource && previewMeta ? (
           <div className="mt-4 space-y-4">
-            {/* Template selector */}
             <div className="flex items-center gap-2 text-sm">
               <span className="shrink-0 text-muted-foreground">标签模板</span>
               <select
@@ -200,7 +203,6 @@ export function PreviewDialog({
               </select>
             </div>
 
-            {/* Download buttons */}
             <div className="flex flex-wrap items-center justify-end gap-2">
               {(["png", "svg", "pdf"] as PreviewExportFormat[]).map((fmt) => (
                 <Button
@@ -217,28 +219,19 @@ export function PreviewDialog({
               ))}
             </div>
 
-            {/* Barcode canvas */}
-            <div
-              ref={previewRef}
-              className="rounded-md border border-dashed p-2 sm:p-3 -mx-2 sm:mx-0 overflow-x-auto"
-            >
-              <div className="inline-block min-w-full">
+            {/* Preview canvas — always SVG so on-screen matches the exported file exactly */}
+            <div className="rounded-md border border-dashed p-2 sm:p-3 -mx-2 sm:mx-0">
+              <div ref={previewRef} className="flex justify-center">
                 {barcodeError ? (
                   <div className="flex items-center justify-center py-8 text-sm text-destructive">
                     条码渲染失败：{barcodeError}
                   </div>
-                ) : customSvgString ? (
-                  // Custom template: render the SVG directly
+                ) : effectiveSvgString ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={`data:image/svg+xml;utf8,${encodeURIComponent(customSvgString)}`}
+                    src={`data:image/svg+xml;utf8,${encodeURIComponent(effectiveSvgString)}`}
                     alt="Label preview"
-                    className="max-w-full"
-                  />
-                ) : canvasPreview ? (
-                  <PreviewTemplateCanvas
-                    preview={canvasPreview}
-                    expiryDisplay={toDisplayDate(previewMeta.expiryDate)}
+                    className="max-w-full h-auto"
                   />
                 ) : (
                   <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
@@ -248,7 +241,6 @@ export function PreviewDialog({
               </div>
             </div>
 
-            {/* Metadata rows */}
             <div className="rounded-md bg-muted/50 p-2 text-sm">
               <p className="font-medium">HRI</p>
               <p className="break-all text-muted-foreground">{previewMeta.hri}</p>

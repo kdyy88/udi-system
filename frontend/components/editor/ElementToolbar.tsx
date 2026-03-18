@@ -1,21 +1,33 @@
 "use client";
 
-import { Undo2, Redo2, Trash2 } from "lucide-react";
+import { Undo2, Redo2, Trash2, Magnet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useCanvasStore, makeBarcode, makeText, makeRect } from "@/stores/canvasStore";
+import { useCanvasStore, makeBarcode, makeText, makeRect, MM_TO_PX_RATIO } from "@/stores/canvasStore";
 import { pxToMm, mmToPx } from "@/types/template";
 
 export function ElementToolbar() {
   const addElement = useCanvasStore((s) => s.addElement);
-  const deleteElement = useCanvasStore((s) => s.deleteElement);
-  const selectedId = useCanvasStore((s) => s.selectedId);
+  const deleteElements = useCanvasStore((s) => s.deleteElements);
+  const selectedIds = useCanvasStore((s) => s.selectedIds);
   const widthPx = useCanvasStore((s) => s.widthPx);
   const heightPx = useCanvasStore((s) => s.heightPx);
   const setCanvasSize = useCanvasStore((s) => s.setCanvasSize);
 
+  const snapEnabled = useCanvasStore((s) => s.snapEnabled);
+  const gridPx = useCanvasStore((s) => s.gridPx);
+  const toggleSnap = useCanvasStore((s) => s.toggleSnap);
+  const setGridPx = useCanvasStore((s) => s.setGridPx);
+
   const handleUndo = () => useCanvasStore.temporal.getState().undo();
   const handleRedo = () => useCanvasStore.temporal.getState().redo();
+
+  // Pre-computed grid presets (px values ≈ 1mm / 2mm / 5mm)
+  const GRID_OPTIONS = [
+    { label: "1 mm", value: Math.round(MM_TO_PX_RATIO * 1) },
+    { label: "2 mm", value: Math.round(MM_TO_PX_RATIO * 2) },
+    { label: "5 mm", value: Math.round(MM_TO_PX_RATIO * 5) },
+  ];
 
   return (
     <div className="flex flex-col gap-3">
@@ -65,13 +77,14 @@ export function ElementToolbar() {
       <div className="space-y-1">
         <p className="text-xs font-medium text-muted-foreground">添加元素</p>
         <div className="flex flex-col gap-1.5">
+          <p className="text-xs text-muted-foreground/70">GS1 条码</p>
           <Button
             size="sm"
             variant="outline"
             className="justify-start"
             onClick={() => addElement(makeBarcode("datamatrix"))}
           >
-            ▦ DataMatrix 条码
+            ▦ DataMatrix
           </Button>
           <Button
             size="sm"
@@ -79,8 +92,43 @@ export function ElementToolbar() {
             className="justify-start"
             onClick={() => addElement(makeBarcode("gs1128"))}
           >
-            ▬ GS1-128 条码
+            ▬ GS1-128
           </Button>
+          <p className="text-xs text-muted-foreground/70 mt-1">二维码</p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="justify-start"
+            onClick={() => addElement(makeBarcode("qrcode"))}
+          >
+            ⊞ QR Code
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="justify-start"
+            onClick={() => addElement(makeBarcode("aztec"))}
+          >
+            ⊡ Aztec Code
+          </Button>
+          <p className="text-xs text-muted-foreground/70 mt-1">线性条码</p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="justify-start"
+            onClick={() => addElement(makeBarcode("ean13"))}
+          >
+            ▌ EAN-13
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="justify-start"
+            onClick={() => addElement(makeBarcode("code128"))}
+          >
+            ▬ Code 128
+          </Button>
+          <p className="text-xs text-muted-foreground/70 mt-1">文本 / 图形</p>
           <Button
             size="sm"
             variant="outline"
@@ -114,12 +162,38 @@ export function ElementToolbar() {
             size="sm"
             variant="outline"
             className="flex-1 text-destructive hover:bg-destructive/10"
-            disabled={!selectedId}
-            onClick={() => selectedId && deleteElement(selectedId)}
-            title="删除选中元素"
+            disabled={selectedIds.length === 0}
+            onClick={() => selectedIds.length > 0 && deleteElements(selectedIds)}
+            title={selectedIds.length > 1 ? `删除 ${selectedIds.length} 个元素` : "删除选中元素"}
           >
             <Trash2 className="size-4" />
           </Button>
+        </div>
+      </div>
+
+      {/* Grid / Snap */}
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">网格吸附</p>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={snapEnabled ? "default" : "outline"}
+            className="shrink-0"
+            onClick={toggleSnap}
+            title={snapEnabled ? "关闭吸附" : "开启吸附"}
+          >
+            <Magnet className="size-4" />
+          </Button>
+          <select
+            className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm disabled:opacity-50"
+            value={gridPx}
+            disabled={!snapEnabled}
+            onChange={(e) => setGridPx(Number(e.target.value))}
+          >
+            {GRID_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       </div>
     </div>

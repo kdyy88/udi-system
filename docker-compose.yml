@@ -24,6 +24,11 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://gs1user:gs1pass@postgres:5432/gs1udi
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      REDIS_URL: redis://redis:6379
+      ENABLE_AUTH: ${ENABLE_AUTH:-true}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
     command:
       - bash
       - -lc
@@ -44,6 +49,18 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   frontend:
     image: node:22-alpine
@@ -54,6 +71,7 @@ services:
     environment:
       CI: "true"
       BACKEND_URL: http://backend:8000
+      NEXT_PUBLIC_ENABLE_AUTH: ${ENABLE_AUTH:-true}
     command: ["sh", "-lc", "corepack enable && pnpm install && pnpm dev --hostname 0.0.0.0 --port 3000"]
     ports:
       - "3000:3000"

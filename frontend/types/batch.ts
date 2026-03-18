@@ -11,7 +11,16 @@ export type BatchSource = "excel" | "form";
 
 export type LabelBatchSummary = {
   id: number;
-  user_id: number;
+  owner_id: string;
+  name: string;
+  source: BatchSource;
+  total_count: number;
+  created_at: string;
+  template_definition: CanvasDefinition | null;
+};
+
+export type BatchCreateResponse = {
+  batch_id: number;
   name: string;
   source: BatchSource;
   total_count: number;
@@ -19,7 +28,7 @@ export type LabelBatchSummary = {
 };
 
 export type LabelBatchListResponse = {
-  total: number;
+  total: number | null;
   next_cursor: number | null;
   items: LabelBatchSummary[];
 };

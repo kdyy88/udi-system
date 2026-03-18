@@ -13,18 +13,48 @@ function normalizeDate(value: string): string | null {
 
   // YY/MM/DD
   if (/^\d{2}\/\d{2}\/\d{2}$/.test(raw)) {
-    return raw.replaceAll("/", "");
+    const [yy, mm, dd] = raw.split("/");
+    if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) {
+      return null;
+    }
+    return `${yy}${mm}${dd}`;
   }
   // YYMMDD
   if (/^\d{6}$/.test(raw)) {
+    const mm = Number(raw.slice(2, 4));
+    const dd = Number(raw.slice(4, 6));
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) {
+      return null;
+    }
     return raw;
   }
   // YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     const [yyyy, mm, dd] = raw.split("-");
+    if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) {
+      return null;
+    }
     return `${yyyy.slice(-2)}${mm}${dd}`;
   }
   return null;
+}
+
+function ensureValidGtin14(di: string): string {
+  if (!/^\d{14}$/.test(di)) {
+    throw new Error("DI must be a 14-digit GTIN");
+  }
+  if (!validateGtin14(di)) {
+    throw new Error("Invalid GTIN-14 check digit");
+  }
+  return di;
+}
+
+function normalizeRequiredDate(value: string, fieldName: string): string {
+  const normalized = normalizeDate(value);
+  if (!normalized) {
+    throw new Error(`${fieldName} must be YY/MM/DD`);
+  }
+  return normalized;
 }
 
 /**
@@ -61,16 +91,21 @@ export type BuildGs1Params = {
  */
 export function buildHri(params: BuildGs1Params): string {
   const { di, lot, expiry, serial, productionDate } = params;
-  const parts: string[] = [`(01)${di}`];
+  const gtin14 = ensureValidGtin14(di);
+  const parts: string[] = [`(01)${gtin14}`];
 
-  const pd = productionDate ? normalizeDate(productionDate) : null;
+  const pd = productionDate ? normalizeRequiredDate(productionDate, "PI production_date") : null;
   if (pd) parts.push(`(11)${pd}`);
 
-  const exp = expiry ? normalizeDate(expiry) : null;
+  const exp = expiry ? normalizeRequiredDate(expiry, "PI expiry") : null;
   if (exp) parts.push(`(17)${exp}`);
 
   if (lot) parts.push(`(10)${lot}`);
   if (serial) parts.push(`(21)${serial}`);
+
+  if (parts.length === 1) {
+    throw new Error("At least one PI value is required: lot, production_date, expiry, or serial");
+  }
 
   return parts.join("");
 }
@@ -81,18 +116,23 @@ export function buildHri(params: BuildGs1Params): string {
  */
 export function buildGs1ElementString(params: BuildGs1Params): string {
   const { di, lot, expiry, serial, productionDate } = params;
+  const gtin14 = ensureValidGtin14(di);
 
   // Tuples: [ai, value, isVariableLength]
-  const elements: Array<[string, string, boolean]> = [["01", di, false]];
+  const elements: Array<[string, string, boolean]> = [["01", gtin14, false]];
 
-  const pd = productionDate ? normalizeDate(productionDate) : null;
+  const pd = productionDate ? normalizeRequiredDate(productionDate, "PI production_date") : null;
   if (pd) elements.push(["11", pd, false]);
 
-  const exp = expiry ? normalizeDate(expiry) : null;
+  const exp = expiry ? normalizeRequiredDate(expiry, "PI expiry") : null;
   if (exp) elements.push(["17", exp, false]);
 
   if (lot) elements.push(["10", lot, true]);
   if (serial) elements.push(["21", serial, true]);
+
+  if (elements.length === 1) {
+    throw new Error("At least one PI value is required: lot, production_date, expiry, or serial");
+  }
 
   const parts: string[] = [];
   for (let i = 0; i < elements.length; i++) {

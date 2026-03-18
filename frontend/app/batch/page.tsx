@@ -1,32 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import { Upload, Download, CheckCircle, AlertCircle } from "lucide-react";
 
+import { AnimatePresence, motion } from "framer-motion";
+import { PageHeader } from "@/components/labels/PageHeader";
 import { Button } from "@/components/ui/button";
-import { clearAuthUser, getAuthUser, type AuthUser } from "@/lib/auth";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageTransition } from "@/components/shared/PageTransition";
 import { useBatchUpload } from "@/hooks/useBatchUpload";
-import type { ParsedRow } from "@/types/batch";
-import type { CanvasDefinition, LabelTemplateRecord } from "@/types/template";
-import { buildHri } from "@/lib/gs1";
-import {
-  createDataMatrixSvg,
-  createNormalizedGs1Svg,
-} from "@/features/labels/preview/barcode-svg";
-import { renderCustomSvg } from "@/lib/svgTemplates";
-import { findAiText } from "@/lib/gs1Utils";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
+import type { CanvasDefinition } from "@/types/template";
 import { TemplateGallery } from "@/components/editor/TemplateGallery";
+import { TemplatePreviewDialog } from "@/components/editor/TemplatePreviewDialog";
 
 // ─── Template Excel Generator ─────────────────────────────────────────────────
 
 function downloadExcelTemplate() {
   const wb = XLSX.utils.book_new();
   // Headers must exactly match COLUMN_MAP keys in excelParser.ts
-  const headers = ["GTIN-14", "批次号", "有效期", "序列号", "生产日期", "备注"];
+  const headers = ["(01)DI/GTIN-14", "(10)批次号", "(17)有效期(格式YYMMDD)", "(21)序列号", "(11)生产日期(格式YYMMDD)", "备注"];
   // GTINs must have a valid GS1 Mod-10 check digit (last digit)
   const examples = [
     ["09506000134383", "LOT001", "261231", "SN000001", "250101", "示例行1"],
@@ -56,7 +52,7 @@ function ParsedRowsTable({ rows }: { rows: ReturnType<typeof useBatchUpload>["ro
         <table className="w-full">
           <thead className="sticky top-0 bg-muted/80">
             <tr>
-              {["行", "GTIN-14", "批次号", "生产日期", "有效期", "序列号", "状态"].map((h) => (
+              {["行", "(01)DI/GTIN-14", "(10)批次号", "(17)有效期(格式YYMMDD)", "(21)序列号", "(11)生产日期(格式YYMMDD)", "状态"].map((h) => (
                 <th key={h} className="px-3 py-2 text-left font-medium text-muted-foreground">
                   {h}
                 </th>
@@ -69,9 +65,9 @@ function ParsedRowsTable({ rows }: { rows: ReturnType<typeof useBatchUpload>["ro
                 <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{row.rowIndex + 1}</td>
                 <td className="px-3 py-1.5 font-mono">{row.di}</td>
                 <td className="px-3 py-1.5">{row.lot ?? "—"}</td>
-                <td className="px-3 py-1.5">{row.production_date ?? "—"}</td>
                 <td className="px-3 py-1.5">{row.expiry ?? "—"}</td>
                 <td className="px-3 py-1.5">{row.serial ?? "—"}</td>
+                <td className="px-3 py-1.5">{row.production_date ?? "—"}</td>
                 <td className="px-3 py-1.5">
                   {row.validationError ? (
                     <span className="text-destructive">{row.validationError}</span>
@@ -83,78 +79,6 @@ function ParsedRowsTable({ rows }: { rows: ReturnType<typeof useBatchUpload>["ro
             ))}
           </tbody>
         </table>
-      </div>
-    </div>
-  );
-}
-
-// ─── Sample Label Preview ─────────────────────────────────────────────────────
-
-function findAiTextLocal(hri: string, ai: string): string {
-  return findAiText(hri, ai);
-}
-
-function SampleLabelPreview({
-  row,
-  templateDefinition,
-}: {
-  row: ParsedRow;
-  templateDefinition: CanvasDefinition;
-}) {
-  const svgDataUrl = useMemo(() => {
-    const hri = buildHri({
-      di: row.di,
-      lot: row.lot,
-      expiry: row.expiry,
-      serial: row.serial,
-      productionDate: row.production_date,
-    });
-
-    const dataMatrixSvg = createDataMatrixSvg(hri);
-    if (!dataMatrixSvg) return null;
-
-    const gs1128Svg = createNormalizedGs1Svg(hri);
-    const gs1128DiSvg = createNormalizedGs1Svg(`(01)${row.di}`);
-    const piText = ["11", "17", "10", "21"]
-      .map((ai) => findAiTextLocal(hri, ai))
-      .filter(Boolean)
-      .join("");
-    const gs1128PiSvg = piText ? createNormalizedGs1Svg(piText) : null;
-
-    const svg = renderCustomSvg(
-      {
-        gtin: row.di,
-        hri,
-        batch_no: row.lot,
-        expiry_date: row.expiry,
-        serial_no: row.serial,
-        production_date: row.production_date,
-        dataMatrixSvg,
-        gs1128Svg,
-        gs1128DiSvg,
-        gs1128PiSvg,
-      },
-      templateDefinition,
-    );
-
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }, [row, templateDefinition]);
-
-  return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium">
-        样式预览
-        <span className="ml-2 text-xs font-normal text-muted-foreground">
-          以第 1 行有效数据为例，与导出的 SVG 文件完全一致
-        </span>
-      </p>
-      <div className="inline-block rounded-lg border bg-white p-3 shadow-sm">
-        {svgDataUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={svgDataUrl} alt="标签预览" className="max-w-full" />
-        ) : (
-          <p className="text-sm text-muted-foreground">无法生成预览（条码数据无效）</p>
-        )}
       </div>
     </div>
   );
@@ -226,28 +150,26 @@ function DropZone({ onFile }: { onFile: (f: File) => void }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BatchPage() {
-  const router = useRouter();
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const { authUser, checkingAuth } = useRequireAuth();
   const [templateDefinition, setTemplateDefinition] = useState<CanvasDefinition | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [previewTemplateDefinition, setPreviewTemplateDefinition] = useState<CanvasDefinition | null>(null);
+  const [previewTemplateName, setPreviewTemplateName] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const { phase, rows, errorMsg, progress, batchId, handleFileSelect, startGenerate, reset } =
-    useBatchUpload(authUser?.user_id ?? 0);
-
-  useEffect(() => {
-    const user = getAuthUser();
-    if (!user) {
-      router.replace("/login");
-      return;
-    }
-    setAuthUser(user);
-    setCheckingAuth(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    useBatchUpload();
 
   if (checkingAuth || !authUser) {
-    return <main className="p-6 text-sm text-muted-foreground">正在检查登录状态…</main>;
+    return (
+      <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
+        <div className="space-y-2">
+          <Skeleton className="h-7 w-36" />
+        </div>
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-44 w-full rounded-xl" />
+      </main>
+    );
   }
 
   const validRows = rows.filter((r) => r.validationError === null);
@@ -258,25 +180,18 @@ export default function BatchPage() {
   const isGenerating = phase === "generating";
   const isDone = phase === "done";
   const isError = phase === "error";
+  const previewRow = validRows[0] ?? null;
+  const invalidRows = rows.filter((r) => r.validationError !== null);
+
+  const phaseKey =
+    isIdle || isError ? "idle" :
+    isParsing ? "parsing" :
+    isDone ? "done" : "working";
 
   return (
+    <PageTransition>
     <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">批量打码通道</h1>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">当前用户：{authUser.username}</span>
-          <Button
-            variant="outline"
-            onClick={() => {
-              clearAuthUser();
-              router.replace("/login");
-            }}
-          >
-            退出登录
-          </Button>
-        </div>
-      </div>
+      <PageHeader title="批量打码通道" titleClassName="text-2xl font-semibold" />
 
       {/* Download Template */}
       <div className="flex items-center gap-3 rounded-xl border bg-muted/30 p-4">
@@ -290,19 +205,37 @@ export default function BatchPage() {
         </Button>
       </div>
 
+      {/* Phase-switched content area */}
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={phaseKey}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.18, ease: "easeOut" }}
+        >
+
       {/* Upload Zone */}
       {(isIdle || isError) && (
         <div className="space-y-3">
           <DropZone onFile={handleFileSelect} />
-          {isError && (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <div>
-                <p className="font-medium">错误</p>
-                <p>{errorMsg}</p>
-              </div>
-            </div>
-          )}
+          <AnimatePresence>
+            {isError && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-medium">错误</p>
+                  <p>{errorMsg}</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
@@ -319,13 +252,28 @@ export default function BatchPage() {
         <div className="space-y-5">
           <ParsedRowsTable rows={rows} />
 
+          {invalidRows.length > 0 && (
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-medium">发现 {invalidRows.length} 行校验失败</p>
+                <p>请先修正表格中的错误后重新上传；日期字段仅支持 YYMMDD、YY/MM/DD 或 YYYY-MM-DD。</p>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-3">
             <h2 className="font-medium">选择标签模板</h2>
             {authUser && (
               <TemplateGallery
-                userId={authUser.user_id}
                 mode="select"
                 selectedId={selectedTemplateId}
+                canPreview={Boolean(previewRow)}
+                onPreview={(def, name) => {
+                  setPreviewTemplateDefinition(def);
+                  setPreviewTemplateName(name);
+                  setPreviewOpen(true);
+                }}
                 onSelect={(def, id) => {
                   setTemplateDefinition(def);
                   setSelectedTemplateId(id);
@@ -335,15 +283,20 @@ export default function BatchPage() {
             {!templateDefinition && (
               <p className="text-sm text-muted-foreground">
                 请选择一个标签模板后再生成 ·{" "}
-                <a href="/editor" className="text-primary hover:underline">
+                <Link href="/editor" className="text-primary hover:underline">
                   新建模板 →
-                </a>
+                </Link>
               </p>
             )}
-            {templateDefinition && validRows[0] && (
-              <SampleLabelPreview row={validRows[0]} templateDefinition={templateDefinition} />
-            )}
           </div>
+
+          <TemplatePreviewDialog
+            open={previewOpen}
+            onOpenChange={setPreviewOpen}
+            row={previewRow}
+            templateDefinition={previewTemplateDefinition}
+            templateName={previewTemplateName}
+          />
 
           {isGenerating && <ProgressBar current={progress.current} total={progress.total} />}
 
@@ -393,6 +346,10 @@ export default function BatchPage() {
           </div>
         </div>
       )}
+
+        </motion.div>
+      </AnimatePresence>
     </main>
+    </PageTransition>
   );
 }

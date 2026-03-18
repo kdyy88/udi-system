@@ -5,14 +5,16 @@ export type HealthResponse = {
 };
 
 export type AuthUser = {
-  user_id: number;
+  user_id: string;
   username: string;
+  email?: string;
   role: string;
 };
 
 export type LoginResponse = {
-  user_id: number;
+  user_id: string;
   username: string;
+  email?: string;
   role: string;
   message: string;
 };
@@ -54,7 +56,7 @@ export type PreviewSource =
 
 export type LabelHistoryItem = {
   id: number;
-  user_id: number;
+  owner_id: string;
   batch_id: number | null;
   gtin: string;
   batch_no: string | null;
@@ -68,7 +70,7 @@ export type LabelHistoryItem = {
 };
 
 export type LabelHistoryListResponse = {
-  total: number;
+  total: number | null;
   next_cursor: number | null;
   items: LabelHistoryItem[];
 };
