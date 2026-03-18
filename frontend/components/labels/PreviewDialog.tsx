@@ -50,8 +50,6 @@ export function PreviewDialog({
 
   const { data: overridesData } = useSystemTemplateOverrides({ enabled: shouldLoadTemplateData });
   const effectiveSystemTemplates = applyOverrides(overridesData?.value ?? {});
-
-  // Extract canonical fields regardless of source kind
   const previewMeta = useMemo(() => {
     if (!previewSource) return null;
     if (previewSource.kind === "local") {
@@ -70,12 +68,10 @@ export function PreviewDialog({
     };
   }, [previewSource, expiryDate]);
 
-  // All barcodes rendered synchronously in-browser — zero network requests
   const { datamatrixSvg, gs1128Svg, gs1128DiOnlySvg, gs1128PiOnlySvg, error: barcodeError } = useBwipPreview(
     previewMeta?.hri
   );
 
-  // Build LabelSvgInput for custom template rendering
   const labelSvgInput = useMemo<LabelSvgInput | null>(() => {
     if (!previewMeta || !datamatrixSvg) return null;
     return {
@@ -88,19 +84,42 @@ export function PreviewDialog({
     };
   }, [previewMeta, datamatrixSvg, gs1128Svg, gs1128DiOnlySvg, gs1128PiOnlySvg]);
 
-  // Render custom template SVG string when a template is selected
+  const selectedSystemTemplate = useMemo(
+    () => effectiveSystemTemplates.find((template) => template.id === selectedTemplateId) ?? null,
+    [effectiveSystemTemplates, selectedTemplateId],
+  );
+
+  const selectedUserTemplate = useMemo(
+    () => templates.find((template) => String(template.id) === selectedTemplateId) ?? null,
+    [selectedTemplateId, templates],
+  );
+
   const customSvgString = useMemo(() => {
     if (!selectedTemplateId || !labelSvgInput) return null;
-    try {
-      // System template
-      const sysTmpl = effectiveSystemTemplates.find((t) => t.id === selectedTemplateId);
-      if (sysTmpl) return renderCustomSvg(labelSvgInput, sysTmpl.canvas);
-      // User template
-      const record = templates.find((t) => String(t.id) === selectedTemplateId);
-      if (record) return renderCustomSvg(labelSvgInput, recordToDefinition(record));
-    } catch { /* fall through to default */ }
+    if (selectedSystemTemplate) return renderCustomSvg(labelSvgInput, selectedSystemTemplate.canvas);
+    if (selectedUserTemplate) return renderCustomSvg(labelSvgInput, recordToDefinition(selectedUserTemplate));
     return null;
-  }, [selectedTemplateId, labelSvgInput, templates, effectiveSystemTemplates]);
+  }, [selectedTemplateId, labelSvgInput, selectedSystemTemplate, selectedUserTemplate]);
+
+  const savePreviewIfNeeded = async () => {
+    if (previewSource?.kind !== "local" || savedPreviewSourceRef.current === previewSource) {
+      return true;
+    }
+
+    setSaving(true);
+    try {
+      await saveLabelToBackend(previewSource.data);
+      savedPreviewSourceRef.current = previewSource;
+      toast.success("已保存至历史记录");
+      onSaved?.();
+      return true;
+    } catch {
+      toast.error("保存失败，请检查网络后重试");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleDownload = async (format: PreviewExportFormat) => {
     if (!previewSource || !previewMeta) {
@@ -108,23 +127,11 @@ export function PreviewDialog({
       return;
     }
 
-    // Brand-new label: save to backend once before the first download
-    if (previewSource.kind === "local" && savedPreviewSourceRef.current !== previewSource) {
-      setSaving(true);
-      try {
-        await saveLabelToBackend(previewSource.data);
-        savedPreviewSourceRef.current = previewSource;
-        toast.success("已保存至历史记录");
-        onSaved?.();
-      } catch {
-        toast.error("保存失败，请检查网络后重试");
-        setSaving(false);
-        return;
-      }
-      setSaving(false);
+    const saved = await savePreviewIfNeeded();
+    if (!saved) {
+      return;
     }
 
-    // For custom template + SVG format, download the raw SVG string directly
     if (customSvgString && format === "svg") {
       const blob = new Blob([customSvgString], { type: "image/svg+xml" });
       const url = URL.createObjectURL(blob);
@@ -136,7 +143,11 @@ export function PreviewDialog({
       return;
     }
 
-    if (!previewRef.current) { toast.error("暂无可下载的预览内容"); return; }
+    if (!previewRef.current) {
+      toast.error("暂无可下载的预览内容");
+      return;
+    }
+
     try {
       await exportPreviewNode(previewRef.current, "label", format);
     } catch {
@@ -144,7 +155,6 @@ export function PreviewDialog({
     }
   };
 
-  // Build canvas preview data (always SVG via bwip-js)
   const canvasPreview = useMemo(() => {
     if (!previewMeta || !gs1128Svg || !datamatrixSvg) return null;
     return {
@@ -173,7 +183,6 @@ export function PreviewDialog({
 
         {previewSource && previewMeta ? (
           <div className="mt-4 space-y-4">
-            {/* Template selector */}
             <div className="flex items-center gap-2 text-sm">
               <span className="shrink-0 text-muted-foreground">标签模板</span>
               <select
@@ -199,7 +208,6 @@ export function PreviewDialog({
               </select>
             </div>
 
-            {/* Download buttons */}
             <div className="flex flex-wrap items-center justify-end gap-2">
               {(["png", "svg", "pdf"] as PreviewExportFormat[]).map((fmt) => (
                 <Button
@@ -216,7 +224,6 @@ export function PreviewDialog({
               ))}
             </div>
 
-            {/* Barcode canvas */}
             <div className="rounded-md border border-dashed p-2 sm:p-3 -mx-2 sm:mx-0 overflow-x-auto">
               <div ref={previewRef} className="inline-block min-w-full">
                 {barcodeError ? (
@@ -224,7 +231,6 @@ export function PreviewDialog({
                     条码渲染失败：{barcodeError}
                   </div>
                 ) : customSvgString ? (
-                  // Custom template: render the SVG directly
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={`data:image/svg+xml;utf8,${encodeURIComponent(customSvgString)}`}
@@ -244,7 +250,6 @@ export function PreviewDialog({
               </div>
             </div>
 
-            {/* Metadata rows */}
             <div className="rounded-md bg-muted/50 p-2 text-sm">
               <p className="font-medium">HRI</p>
               <p className="break-all text-muted-foreground">{previewMeta.hri}</p>

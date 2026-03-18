@@ -1,5 +1,6 @@
 "use client";
 
+import { isAxiosError } from "axios";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -8,6 +9,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+
+type ErrorPayload = {
+  detail?: string;
+};
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -36,10 +41,9 @@ function ResetPasswordContent() {
       await api.post("/api/v1/auth/reset-password", { token, password });
       toast.success("密码已重置，请重新登录");
       router.push("/login");
-    } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(typeof detail === "string" ? detail : "重置失败，链接可能已过期");
+    } catch (err) {
+      const detail = isAxiosError<ErrorPayload>(err) ? err.response?.data?.detail : undefined;
+      toast.error(detail ?? "重置失败，链接可能已过期");
     } finally {
       setLoading(false);
     }

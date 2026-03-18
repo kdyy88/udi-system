@@ -1,18 +1,16 @@
-"""Email service backed by Resend.
-
-In development (RESEND_API_KEY is empty), emails are logged to stdout only.
-In production, set RESEND_API_KEY + RESEND_FROM_EMAIL environment variables.
-"""
-
 from __future__ import annotations
 
 import logging
+from importlib import import_module
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 
+if TYPE_CHECKING:
+    from fastapi import Request
+
 logger = logging.getLogger(__name__)
 
-# HTML email template — inline styles for maximum email client compat
 _BASE_TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -67,51 +65,61 @@ _RESET_BODY = """\
 """
 
 
+def _frontend_base(request: "Request | None") -> str:
+    """Resolve the frontend origin from the incoming request.
+
+    Priority:
+    1. ``Origin`` request header  (set by browsers on cross-origin POST)
+    2. ``Referer`` request header (fallback for some clients)
+    3. ``settings.FRONTEND_URL`` (env-var / hardcoded fallback)
+
+    This makes email deep-links work correctly regardless of which domain the
+    frontend is deployed to — no config change needed when the domain changes.
+    """
+    if request is not None:
+        origin = request.headers.get("origin") or ""
+        if origin.startswith(("http://", "https://")):
+            return origin.rstrip("/")
+        referer = request.headers.get("referer") or ""
+        if referer.startswith(("http://", "https://")):
+            # Strip path — keep scheme + host only
+            from urllib.parse import urlparse
+            parts = urlparse(referer)
+            return f"{parts.scheme}://{parts.netloc}"
+    return settings.FRONTEND_URL.rstrip("/")
+
+
 def _build_email(body: str) -> str:
     return _BASE_TEMPLATE.format(body=body)
 
 
-async def send_verification_email(to: str, token: str) -> None:
-    """Send account activation email with deep-link token."""
-    url = f"{settings.FRONTEND_URL}/verify-email?token={token}"
+def _send_email(to: str, subject: str, html: str, log_context: str, url: str) -> None:
+    if not settings.RESEND_API_KEY:
+        logger.info("[DEV EMAIL] %s for %s: %s", log_context, to, url)
+        return
+
+    try:
+        resend = import_module("resend")
+        resend.api_key = settings.RESEND_API_KEY
+        resend.Emails.send({
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [to],
+            "subject": subject,
+            "html": html,
+        })
+    except (ImportError, AttributeError):
+        logger.exception("Resend SDK is not available")
+
+
+async def send_verification_email(to: str, token: str, request: "Request | None" = None) -> None:
+    base = _frontend_base(request)
+    url = f"{base}/verify-email?token={token}"
     html = _build_email(_VERIFY_BODY.format(url=url))
-
-    if not settings.RESEND_API_KEY:
-        logger.info("[DEV EMAIL] Verification link for %s: %s", to, url)
-        return
-
-    try:
-        import resend  # type: ignore[import-untyped]
-
-        resend.api_key = settings.RESEND_API_KEY
-        resend.Emails.send({
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [to],
-            "subject": "GS1 UDI System — 验证您的邮箱",
-            "html": html,
-        })
-    except Exception:
-        logger.exception("Failed to send verification email to %s", to)
+    _send_email(to, "GS1 UDI System — 验证您的邮箱", html, "Verification link", url)
 
 
-async def send_reset_email(to: str, token: str) -> None:
-    """Send password-reset email with deep-link token."""
-    url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+async def send_reset_email(to: str, token: str, request: "Request | None" = None) -> None:
+    base = _frontend_base(request)
+    url = f"{base}/reset-password?token={token}"
     html = _build_email(_RESET_BODY.format(url=url))
-
-    if not settings.RESEND_API_KEY:
-        logger.info("[DEV EMAIL] Password reset link for %s: %s", to, url)
-        return
-
-    try:
-        import resend  # type: ignore[import-untyped]
-
-        resend.api_key = settings.RESEND_API_KEY
-        resend.Emails.send({
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [to],
-            "subject": "GS1 UDI System — 重置密码",
-            "html": html,
-        })
-    except Exception:
-        logger.exception("Failed to send reset email to %s", to)
+    _send_email(to, "GS1 UDI System — 重置密码", html, "Password reset link", url)

@@ -1,6 +1,7 @@
 "use client";
 
-import { useSyncExternalStore, useState } from "react";
+import { isAxiosError } from "axios";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -28,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { getAuthUser, isAdmin, subscribeAuthUser } from "@/lib/auth";
+import { isAdmin } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import {
@@ -42,7 +43,16 @@ const ENABLE_AUTH = process.env.NEXT_PUBLIC_ENABLE_AUTH === "true";
 
 type Tab = "users" | "stats" | "health";
 
-// ── Tab bar ────────────────────────────────────────────────────────────────
+type ApiErrorPayload = {
+  detail?: string;
+};
+
+function getErrorDetail(error: unknown, fallback: string): string {
+  if (isAxiosError<ApiErrorPayload>(error)) {
+    return error.response?.data?.detail ?? fallback;
+  }
+  return fallback;
+}
 
 function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void }) {
   const tabs: { id: Tab; label: string }[] = [
@@ -70,8 +80,6 @@ function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void 
   );
 }
 
-// ── Users tab ──────────────────────────────────────────────────────────────
-
 function UsersTab({ currentAdminId }: { currentAdminId: string }) {
   const { users, totalUsers, loadingUsers, updateUser, deleteUser } = useAdminUsers();
   const [deleteTarget, setDeleteTarget] = useState<AdminUserSummary | null>(null);
@@ -82,8 +90,8 @@ function UsersTab({ currentAdminId }: { currentAdminId: string }) {
       {
         onSuccess: () =>
           toast.success(`账号已${user.is_active ? "禁用" : "启用"}：${user.username ?? user.email}`),
-        onError: (e: unknown) =>
-          toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "操作失败"),
+        onError: (error) =>
+          toast.error(getErrorDetail(error, "操作失败")),
       },
     );
   };
@@ -95,8 +103,8 @@ function UsersTab({ currentAdminId }: { currentAdminId: string }) {
         toast.success(`账号已删除：${deleteTarget.username ?? deleteTarget.email}`);
         setDeleteTarget(null);
       },
-      onError: (e: unknown) =>
-        toast.error((e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? "删除失败"),
+      onError: (error) =>
+        toast.error(getErrorDetail(error, "删除失败")),
     });
   };
 
@@ -198,7 +206,6 @@ function UsersTab({ currentAdminId }: { currentAdminId: string }) {
         </table>
       </div>
 
-      {/* Delete confirmation dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
@@ -231,8 +238,6 @@ function UsersTab({ currentAdminId }: { currentAdminId: string }) {
     </>
   );
 }
-
-// ── Stats tab ──────────────────────────────────────────────────────────────
 
 function StatsTab() {
   const { stats, loadingStats, refetchStats, statsUpdatedAt } = useAdminStats();
@@ -306,8 +311,6 @@ function StatsTab() {
   );
 }
 
-// ── Health tab ─────────────────────────────────────────────────────────────
-
 function StatusLight({ ok }: { ok: boolean }) {
   return ok ? (
     <CheckCircle2 className="size-5 shrink-0 text-green-500" />
@@ -376,14 +379,11 @@ function HealthTab() {
   );
 }
 
-// ── Page ───────────────────────────────────────────────────────────────────
-
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>("users");
   const { authUser, checkingAuth } = useRequireAuth();
   const router = useRouter();
 
-  // In tool mode this page should not be accessible
   if (!ENABLE_AUTH) {
     router.replace("/");
     return null;

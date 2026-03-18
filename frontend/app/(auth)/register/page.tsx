@@ -1,5 +1,6 @@
 "use client";
 
+import { isAxiosError } from "axios";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -8,6 +9,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+
+type ErrorPayload = {
+  detail?: string;
+};
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -21,12 +26,11 @@ export default function RegisterPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      await api.post("/api/v1/auth/register", { email, username, password });
+      await api.post("/api/v1/auth/register", { email, username: username.trim() || null, password });
       setDone(true);
-    } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(typeof detail === "string" ? detail : "注册失败，请检查信息后重试");
+    } catch (err) {
+      const detail = isAxiosError<ErrorPayload>(err) ? err.response?.data?.detail : undefined;
+      toast.error(detail ?? "注册失败，请检查信息后重试");
     } finally {
       setLoading(false);
     }

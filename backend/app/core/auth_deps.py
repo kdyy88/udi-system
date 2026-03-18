@@ -1,14 +1,3 @@
-"""Core & Shell auth abstraction layer.
-
-Provides ``get_current_user`` and ``get_current_admin`` — FastAPI Depends()
-callables that either:
-  * ENABLE_AUTH=false  →  return a static ANONYMOUS_USER (pure-tool mode)
-  * ENABLE_AUTH=true   →  delegate to fastapi-users (commercial mode)
-
-Business-layer code MUST import from here, never from fastapi_users_config
-directly.  This keeps the tool layer free of any concrete auth dependency.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -35,15 +24,7 @@ ANONYMOUS_USER = CurrentUser(
     email=None,
 )
 
-
-# ---------------------------------------------------------------------------
-# Dependency factories
-# ---------------------------------------------------------------------------
-
 if settings.ENABLE_AUTH:
-    # Import the real fastapi-users dependencies only when auth is enabled.
-    # This avoids loading fastapi-users (and triggering DB / User model init)
-    # when running in pure-tool mode.
     from app.db.fastapi_users_config import (
         current_active_user as _fau_active,
         current_admin_user as _fau_admin,
@@ -51,7 +32,6 @@ if settings.ENABLE_AUTH:
     from app.db.models import User as _User
 
     async def get_current_user(user: _User = Depends(_fau_active)) -> CurrentUser:
-        """Resolve the authenticated user and return a ``CurrentUser``."""
         return CurrentUser(
             id=str(user.id),
             username=user.username or user.email.split("@")[0],
@@ -60,7 +40,6 @@ if settings.ENABLE_AUTH:
         )
 
     async def get_current_admin(user: _User = Depends(_fau_admin)) -> CurrentUser:
-        """Resolve an admin user and return a ``CurrentUser``."""
         return CurrentUser(
             id=str(user.id),
             username=user.username or user.email.split("@")[0],
@@ -69,11 +48,8 @@ if settings.ENABLE_AUTH:
         )
 
 else:
-    # ── Pure-tool mode: no auth required ──────────────────────────────────
-    async def get_current_user() -> CurrentUser:  # type: ignore[misc]
-        """Always returns ANONYMOUS_USER when auth is disabled."""
+    async def _anonymous_user() -> CurrentUser:
         return ANONYMOUS_USER
 
-    async def get_current_admin() -> CurrentUser:  # type: ignore[misc]
-        """Always returns ANONYMOUS_USER (admin) when auth is disabled."""
-        return ANONYMOUS_USER
+    get_current_user = _anonymous_user
+    get_current_admin = _anonymous_user

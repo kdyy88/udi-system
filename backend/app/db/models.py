@@ -9,16 +9,10 @@ from app.core.config import settings
 from app.db.session import Base
 
 
-# ── User model (Shell layer — only loaded when ENABLE_AUTH=true) ───────────────
-# The User class is defined conditionally to avoid importing fastapi-users in
-# pure-tool mode.  Business tables below use a plain ``owner_id`` string
-# instead of a FK to users, so the tool layer never depends on this table.
-
 if settings.ENABLE_AUTH:
     from fastapi_users.db import SQLAlchemyBaseUserTable as _BaseUserTable
 
-    class User(_BaseUserTable[int], Base):  # type: ignore[misc]
-        """Application user (commercial / auth-enabled mode only)."""
+    class User(_BaseUserTable[int], Base):
 
         __tablename__ = "users"
 
@@ -33,7 +27,7 @@ if settings.ENABLE_AUTH:
             DateTime(timezone=True), default=lambda: datetime.now(UTC)
         )
 else:
-    User = None  # type: ignore[assignment,misc]
+    User = None
 
 
 class SystemConfig(Base):

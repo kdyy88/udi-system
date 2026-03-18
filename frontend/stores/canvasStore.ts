@@ -1,16 +1,33 @@
-/**
- * Zustand canvas editor store with zundo undo/redo middleware.
- *
- * All coordinates and sizes are in px (internal unit).
- * The CSS transform:scale(zoom) in Canvas.tsx handles display scaling without
- * touching this state — no unit math in drag callbacks.
- */
 import { create } from "zustand";
 import { temporal } from "zundo";
 
-import type { CanvasElement, BarcodeElement, TextElement, RectElement, CanvasDefinition, BarcodeType } from "@/types/template";
+import type {
+  CanvasElement,
+  BarcodeElement,
+  TextElement,
+  RectElement,
+  CanvasDefinition,
+  BarcodeType,
+  GS1AiField,
+} from "@/types/template";
 
-// ─── Store shape ──────────────────────────────────────────────────────────────
+type CanvasElementPatch = {
+  type?: CanvasElement["type"];
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  barcodeType?: BarcodeType;
+  content?: string;
+  fieldBinding?: GS1AiField | null;
+  fontSize?: number;
+  fontWeight?: TextElement["fontWeight"];
+  textAlign?: TextElement["textAlign"];
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+};
+type CanvasElementInput = Omit<BarcodeElement, "id"> | Omit<TextElement, "id"> | Omit<RectElement, "id">;
 
 type CanvasState = {
   // Canvas dimensions (px)
@@ -26,33 +43,100 @@ type CanvasState = {
 };
 
 type CanvasActions = {
-  // Element CRUD
-  addElement: (el: Omit<CanvasElement, "id">) => void;
-  updateElement: (id: string, patch: Record<string, unknown>) => void;
+  addElement: (el: CanvasElementInput) => void;
+  updateElement: (id: string, patch: CanvasElementPatch) => void;
   deleteElement: (id: string) => void;
   deleteElements: (ids: string[]) => void;
-  // Selection
-  setSelected: (id: string | null) => void;   // null = clear; string = single select
-  toggleSelected: (id: string) => void;        // Shift+click: add/remove from set
-  // Canvas size
+  setSelected: (id: string | null) => void;
+  toggleSelected: (id: string) => void;
   setCanvasSize: (widthPx: number, heightPx: number) => void;
-  // Grid / snap
   toggleSnap: () => void;
   setGridPx: (px: number) => void;
-  // Load a full CanvasDefinition (e.g. from DB)
   loadCanvas: (def: CanvasDefinition) => void;
-  // Clear canvas
   resetCanvas: () => void;
-  // Read-only derived view
   canvasDef: () => CanvasDefinition;
 };
 
 type CanvasStore = CanvasState & CanvasActions;
 
-// ─── Default dimensions ── 100mm × 60mm at 3.7795px/mm ───────────────────────
 const DEFAULT_WIDTH  = 378; // ~100mm
 const DEFAULT_HEIGHT = 227; // ~60mm
 export const MM_TO_PX_RATIO = 3.7795275591; // 1 mm in px
+
+function withElementId(element: CanvasElementInput, id: string): CanvasElement {
+  switch (element.type) {
+    case "barcode":
+      return { ...element, id };
+    case "text":
+      return { ...element, id };
+    case "rect":
+      return { ...element, id };
+  }
+}
+
+function isBarcodeType(value: unknown): value is BarcodeType {
+  return value === "datamatrix" || value === "gs1128" || value === "gs1128_di" || value === "gs1128_pi";
+}
+
+function isGs1AiField(value: unknown): value is GS1AiField {
+  return value === "01" || value === "10" || value === "11" || value === "17" || value === "21";
+}
+
+function isFontWeight(value: unknown): value is TextElement["fontWeight"] {
+  return value === "normal" || value === "bold";
+}
+
+function isTextAlign(value: unknown): value is TextElement["textAlign"] {
+  return value === "left" || value === "center" || value === "right";
+}
+
+function mergeElement(element: CanvasElement, patch: CanvasElementPatch): CanvasElement {
+  if (patch.type && patch.type !== element.type) {
+    return element;
+  }
+
+  switch (element.type) {
+    case "barcode":
+      return {
+        ...element,
+        x: patch.x ?? element.x,
+        y: patch.y ?? element.y,
+        w: patch.w ?? element.w,
+        h: patch.h ?? element.h,
+        barcodeType: isBarcodeType(patch.barcodeType) ? patch.barcodeType : element.barcodeType,
+      };
+    case "text":
+      return {
+        ...element,
+        x: patch.x ?? element.x,
+        y: patch.y ?? element.y,
+        w: patch.w ?? element.w,
+        h: patch.h ?? element.h,
+        content: "content" in patch && typeof patch.content === "string" ? patch.content : element.content,
+        fieldBinding: patch.fieldBinding === null
+          ? null
+          : isGs1AiField(patch.fieldBinding)
+            ? patch.fieldBinding
+            : element.fieldBinding,
+        fontSize: "fontSize" in patch && typeof patch.fontSize === "number" ? patch.fontSize : element.fontSize,
+        fontWeight: isFontWeight(patch.fontWeight) ? patch.fontWeight : element.fontWeight,
+        textAlign: isTextAlign(patch.textAlign) ? patch.textAlign : element.textAlign,
+      };
+    case "rect":
+      return {
+        ...element,
+        x: patch.x ?? element.x,
+        y: patch.y ?? element.y,
+        w: patch.w ?? element.w,
+        h: patch.h ?? element.h,
+        fill: "fill" in patch && typeof patch.fill === "string" ? patch.fill : element.fill,
+        stroke: "stroke" in patch && typeof patch.stroke === "string" ? patch.stroke : element.stroke,
+        strokeWidth: "strokeWidth" in patch && typeof patch.strokeWidth === "number"
+          ? patch.strokeWidth
+          : element.strokeWidth,
+      };
+  }
+}
 
 function generateElementId(): string {
   if (typeof globalThis !== "undefined") {
@@ -69,17 +153,13 @@ function generateElementId(): string {
   return `el-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** Snap a raw px value to the nearest grid multiple. */
 export function snapToGrid(value: number, gridPx: number): number {
   return Math.round(value / gridPx) * gridPx;
 }
 
-// ─── Store ────────────────────────────────────────────────────────────────────
-
 export const useCanvasStore = create<CanvasStore>()(
   temporal(
     (set, get) => ({
-      // State
       widthPx: DEFAULT_WIDTH,
       heightPx: DEFAULT_HEIGHT,
       elements: [],
@@ -87,14 +167,13 @@ export const useCanvasStore = create<CanvasStore>()(
       snapEnabled: false,
       gridPx: Math.round(MM_TO_PX_RATIO * 2), // 2 mm default grid
 
-      // Actions
       addElement: (el) =>
-        set((s) => ({ elements: [...s.elements, { ...el, id: generateElementId() } as CanvasElement] })),
+        set((s) => ({ elements: [...s.elements, withElementId(el, generateElementId())] })),
 
       updateElement: (id, patch) =>
         set((s) => ({
           elements: s.elements.map((el) =>
-            el.id === id ? ({ ...el, ...patch } as CanvasElement) : el,
+            el.id === id ? mergeElement(el, patch) : el,
           ),
         })),
 
@@ -142,7 +221,6 @@ export const useCanvasStore = create<CanvasStore>()(
       },
     }),
     {
-      // Only track element changes in undo history (not selection)
       partialize: (s) => ({
         elements: s.elements,
         widthPx: s.widthPx,
@@ -153,22 +231,16 @@ export const useCanvasStore = create<CanvasStore>()(
   ),
 );
 
-// ─── Convenience factory helpers ──────────────────────────────────────────────
-
-/** Width-to-height aspect ratio for GS1-128 linear barcode elements (wide/short). */
 export const GS1_128_ASPECT_RATIO = 6; // width / height
 
-/** Width-to-height aspect ratio for DataMatrix barcode elements (square). */
 export const DATAMATRIX_ASPECT_RATIO = 1; // width / height = 1:1
 
-/** Returns the required aspect ratio for a barcode type, or false if unconstrained. */
 export function barcodeAspectRatio(barcodeType: BarcodeType): number | false {
   if (isGs1128Type(barcodeType)) return GS1_128_ASPECT_RATIO;
   if (barcodeType === "datamatrix") return DATAMATRIX_ASPECT_RATIO;
   return false;
 }
 
-/** Barcode types that are GS1-128 (linear, wide). */
 export function isGs1128Type(barcodeType: BarcodeType): boolean {
   return barcodeType === "gs1128" || barcodeType === "gs1128_di" || barcodeType === "gs1128_pi";
 }
@@ -177,7 +249,6 @@ export function makeBarcode(barcodeType: BarcodeType = "datamatrix"): Omit<Barco
   if (isGs1128Type(barcodeType)) {
     return { type: "barcode", x: 10, y: 10, w: 240, h: 40, barcodeType };
   }
-  // DataMatrix — square 1:1
   return { type: "barcode", x: 10, y: 10, w: 100, h: 100, barcodeType };
 }
 

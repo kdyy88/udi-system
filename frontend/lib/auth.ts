@@ -7,21 +7,52 @@ const ENABLE_AUTH = process.env.NEXT_PUBLIC_ENABLE_AUTH === "true";
 export const AUTH_STORAGE_KEY = "gs1_udi_auth_user";
 const AUTH_CHANGE_EVENT = "gs1-auth-user-change";
 const AUTH_SESSION_EVENT = "gs1-auth-session-change";
-
-/** Default user returned when auth is disabled (pure-tool mode). */
 const MOCK_USER: AuthUser = {
   user_id: "anonymous",
   username: "local-user",
   role: "admin",
 };
-
-// In tool mode the cache is eagerly set to MOCK_USER so that every call to
-// getAuthUser() — including the very first SSR-hydration render — sees a
-// deterministic "authenticated" state.  This eliminates the brief "checking
-// auth" flash that would otherwise occur before initSession() completes.
 let authUserCache: AuthUser | null | undefined = ENABLE_AUTH ? undefined : MOCK_USER;
 let authSessionStatus: "idle" | "checking" | "resolved" = ENABLE_AUTH ? "idle" : "resolved";
 let initSessionPromise: Promise<AuthUser | null> | null = null;
+
+type SessionUserResponse = {
+  id: number;
+  email: string;
+  username?: string;
+  role?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isAuthUser(value: unknown): value is AuthUser {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return typeof value.user_id === "string"
+    && typeof value.username === "string"
+    && typeof value.role === "string"
+    && (value.email === undefined || typeof value.email === "string");
+}
+
+function isSessionUserResponse(value: unknown): value is SessionUserResponse {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return typeof value.id === "number"
+    && typeof value.email === "string"
+    && (value.username === undefined || typeof value.username === "string")
+    && (value.role === undefined || typeof value.role === "string");
+}
+
+function parseAuthUser(raw: string): AuthUser | null {
+  const parsed: unknown = JSON.parse(raw);
+  return isAuthUser(parsed) ? parsed : null;
+}
 
 function setAuthSessionStatus(status: "idle" | "checking" | "resolved"): void {
   authSessionStatus = status;
@@ -39,8 +70,9 @@ function readAuthUserFromStorage(): AuthUser | null {
   }
 
   try {
-    return JSON.parse(raw) as AuthUser;
+    return parseAuthUser(raw);
   } catch {
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
     return null;
   }
 }
@@ -84,11 +116,6 @@ export function getAuthSessionStatus(): "idle" | "checking" | "resolved" {
   return authSessionStatus;
 }
 
-/**
- * Re-validate the session by calling /api/v1/auth/users/me.
- * On success, refreshes localStorage with the latest user data.
- * On 401 (cookie expired / missing), clears auth state.
- */
 export async function initSession(): Promise<AuthUser | null> {
   if (!ENABLE_AUTH) return MOCK_USER;
 
@@ -105,12 +132,18 @@ export async function initSession(): Promise<AuthUser | null> {
         clearAuthUser();
         return null;
       }
-      const me = await res.json() as { id: number; username?: string; email: string; role?: string };
+
+      const payload: unknown = await res.json();
+      if (!isSessionUserResponse(payload)) {
+        clearAuthUser();
+        return null;
+      }
+
       const user: AuthUser = {
-        user_id: String(me.id),
-        username: me.username ?? me.email.split("@")[0],
-        email: me.email,
-        role: me.role ?? "operator",
+        user_id: String(payload.id),
+        username: payload.username ?? payload.email.split("@")[0],
+        email: payload.email,
+        role: payload.role ?? "operator",
       };
       setAuthUser(user);
       return user;

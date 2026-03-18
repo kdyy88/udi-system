@@ -1,28 +1,14 @@
-"""Auth routes — fastapi-users + legacy JSON login.
-
-Standard endpoints (fastapi-users):
-  POST /auth/jwt/login            OAuth2 form email+password → HTTP-only JWT cookie
-  POST /auth/jwt/logout           clear cookie
-  POST /auth/register             create account
-  POST /auth/forgot-password      send reset email
-  POST /auth/reset-password       apply new password via token
-  POST /auth/request-verify-token resend activation email
-  POST /auth/verify               activate via token
-  GET  /auth/users/me             current user info
-
-Legacy (backward compat):
-  POST /auth/login                JSON {username, password} → sets cookie + returns user info
-"""
-
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.security import OAuth2PasswordRequestForm
 
 from app.db.fastapi_users_config import (
     UserCreate,
     UserRead,
     UserUpdate,
     auth_backend,
+        cookie_transport,
     fastapi_users,
     get_jwt_strategy,
     get_user_manager,
@@ -32,8 +18,6 @@ from app.schemas.label import LegacyLoginRequest, LegacyLoginResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# ── Standard fastapi-users routes ─────────────────────────────────────────────
 
 router.include_router(
     fastapi_users.get_auth_router(auth_backend),
@@ -62,8 +46,6 @@ router.include_router(
 )
 
 
-# ── Legacy login endpoint ──────────────────────────────────────────────────────
-
 @router.post("/auth/login", response_model=LegacyLoginResponse, tags=["auth"])
 async def legacy_login(
     payload: LegacyLoginRequest,
@@ -71,10 +53,13 @@ async def legacy_login(
     response: Response,
     user_manager: UserManager = Depends(get_user_manager),
 ) -> LegacyLoginResponse:
-    """Accept JSON {username, password}, authenticate, issue JWT cookie."""
-    from fastapi.security import OAuth2PasswordRequestForm as _Form
-
-    creds = _Form(username=payload.username, password=payload.password, scope="")  # type: ignore[call-arg]
+    creds = OAuth2PasswordRequestForm(
+        username=payload.username,
+        password=payload.password,
+        scope="",
+        client_id=None,
+        client_secret=None,
+    )
     user = await user_manager.authenticate(creds)
 
     if user is None or not user.is_active:
@@ -88,7 +73,7 @@ async def legacy_login(
 
     strategy = get_jwt_strategy()
     token = await strategy.write_token(user)
-    login_resp = await auth_backend.transport.get_login_response(token)  # type: ignore[attr-defined]
+    login_resp = await cookie_transport.get_login_response(token)
     for k, v in login_resp.headers.items():
         response.headers.append(k, v)
 

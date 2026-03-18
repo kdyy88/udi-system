@@ -1,36 +1,23 @@
-"""Admin-only API endpoints (Shell layer — only loaded when ENABLE_AUTH=true).
-
-Provides:
-  GET    /admin/users          — List all registered users
-  PATCH  /admin/users/{id}     — Update user status / role
-  DELETE /admin/users/{id}     — Permanently delete a user
-  GET    /admin/stats          — Aggregate usage statistics
-  GET    /admin/health         — Extended health (DB + Redis status)
-
-All endpoints require ENABLE_AUTH=true and role == "admin".
-The GS1 engine and label-template core remain completely untouched.
-"""
-
 from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, date
-from time import perf_counter
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from redis.exceptions import RedisError
 
 from app.core.auth_deps import CurrentUser, get_current_admin
+from app.db.redis import get_redis_client
 from app.db.models import LabelBatch, LabelHistory, User
 from app.db.session import get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
 
-
-# ── Pydantic schemas ──────────────────────────────────────────────────────────
 
 class AdminUserSummary(BaseModel):
     id: int
@@ -71,20 +58,15 @@ class AdminHealthResponse(BaseModel):
     redis: ServiceStatus
 
 
-# ── User management ───────────────────────────────────────────────────────────
-
 @router.get("/users", response_model=AdminUserListResponse)
 async def list_users(
     db: AsyncSession = Depends(get_db),
     _admin: CurrentUser = Depends(get_current_admin),
 ) -> AdminUserListResponse:
-    """Return all registered users."""
     count_result = await db.execute(select(func.count()).select_from(User))
     total = count_result.scalar_one()
 
-    users_result = await db.execute(
-        select(User).order_by(User.id.asc())
-    )
+    users_result = await db.execute(select(User).order_by(User.id.asc()))
     users = users_result.scalars().all()
 
     items = [
@@ -115,7 +97,6 @@ async def update_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
 
-    # Prevent admin from disabling themselves
     if str(user.id) == admin.id and payload.is_active is False:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -171,14 +152,11 @@ async def delete_user(
     logger.info("Admin %s deleted user %d (%s)", admin.username, user_id, user.email)
 
 
-# ── Dashboard stats ───────────────────────────────────────────────────────────
-
 @router.get("/stats", response_model=AdminStatsResponse)
 async def get_stats(
     db: AsyncSession = Depends(get_db),
     _admin: CurrentUser = Depends(get_current_admin),
 ) -> AdminStatsResponse:
-    """Aggregate usage statistics from LabelHistory and LabelBatch."""
     today_start = datetime.combine(date.today(), datetime.min.time()).replace(tzinfo=UTC)
     thirty_days_ago = datetime.fromtimestamp(
         datetime.now(UTC).timestamp() - 30 * 86400, tz=UTC
@@ -198,7 +176,6 @@ async def get_stats(
     total_users_result = await db.execute(select(func.count()).select_from(User))
     total_users = total_users_result.scalar_one()
 
-    # Active = distinct users who generated at least one label in the last 30 days
     active_users_result = await db.execute(
         select(func.count(func.distinct(LabelHistory.owner_id))).where(
             LabelHistory.created_at >= thirty_days_ago
@@ -215,31 +192,26 @@ async def get_stats(
     )
 
 
-# ── Extended health check ─────────────────────────────────────────────────────
-
 @router.get("/health", response_model=AdminHealthResponse)
 async def admin_health(
     db: AsyncSession = Depends(get_db),
     _admin: CurrentUser = Depends(get_current_admin),
 ) -> AdminHealthResponse:
-    """Extended health check: database + Redis status."""
-    # — Database probe —
     try:
         await db.execute(text("SELECT 1"))
         db_status = ServiceStatus(ok=True, detail="connected")
-    except Exception as exc:  # noqa: BLE001
+    except SQLAlchemyError as exc:
         db_status = ServiceStatus(ok=False, detail=str(exc)[:120])
 
-    # — Redis probe —
-    try:
-        from app.db.redis import _redis_pool  # noqa: PLC0415
-        if _redis_pool is not None:
-            await _redis_pool.ping()
+    redis = get_redis_client()
+    if redis is None:
+        redis_status = ServiceStatus(ok=False, detail="未连接（限流功能已禁用）")
+    else:
+        try:
+            await redis.ping()
             redis_status = ServiceStatus(ok=True, detail="connected")
-        else:
-            redis_status = ServiceStatus(ok=False, detail="未连接（限流功能已禁用）")
-    except Exception as exc:  # noqa: BLE001
-        redis_status = ServiceStatus(ok=False, detail=str(exc)[:120])
+        except RedisError as exc:
+            redis_status = ServiceStatus(ok=False, detail=str(exc)[:120])
 
     return AdminHealthResponse(
         timestamp=datetime.now(UTC).isoformat(),

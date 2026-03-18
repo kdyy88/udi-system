@@ -1,12 +1,3 @@
-/**
- * useBatchUpload — state machine for the 6-phase batch upload pipeline.
- *
- * Rendering uses the SAME path as single-label export:
- *   barcode-svg.ts → PreviewTemplateCanvas → html-to-image → JSZip
- *
- * Phase transitions:
- *   idle → parsing → validated → saving → generating → done | error
- */
 import { useCallback, useState } from "react";
 import { saveAs } from "file-saver";
 import { api } from "@/lib/api";
@@ -34,6 +25,10 @@ const INITIAL_STATE: State = {
   fileName: "",
 };
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 export function useBatchUpload() {
   const [state, setState] = useState<State>(INITIAL_STATE);
 
@@ -41,7 +36,6 @@ export function useBatchUpload() {
     setState((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  // ── 1. Parse Excel file ────────────────────────────────────────────────────
   const handleFileSelect = useCallback(
     async (file: File) => {
       set({ phase: "parsing", errorMsg: null, rows: [], fileName: file.name });
@@ -49,13 +43,12 @@ export function useBatchUpload() {
         const rows = await parseExcelFile(file);
         set({ phase: "validated", rows });
       } catch (err) {
-        set({ phase: "error", errorMsg: err instanceof Error ? err.message : "文件解析失败" });
+        set({ phase: "error", errorMsg: getErrorMessage(err, "文件解析失败") });
       }
     },
     [set],
   );
 
-  // ── 2. Save to backend then render via bwip-js ───────────────────────────
   const startGenerate = useCallback(
     async (templateDefinition: CanvasDefinition) => {
       if (state.phase !== "validated") return;
@@ -85,10 +78,10 @@ export function useBatchUpload() {
           })),
         });
         batchId = res.data.batch_id;
-      } catch (err: unknown) {
+      } catch (err) {
         set({
           phase: "error",
-          errorMsg: err instanceof Error ? err.message : "保存失败，请检查数据后重试",
+          errorMsg: getErrorMessage(err, "保存失败，请检查数据后重试"),
         });
         return;
       }
@@ -109,13 +102,12 @@ export function useBatchUpload() {
         saveAs(blob, zipName);
         set({ phase: "done" });
       } catch (err) {
-        set({ phase: "error", errorMsg: err instanceof Error ? err.message : "标签生成失败" });
+        set({ phase: "error", errorMsg: getErrorMessage(err, "标签生成失败") });
       }
     },
     [state.phase, state.rows, state.fileName, set],
   );
 
-  // ── 3. Reset ───────────────────────────────────────────────────────────────
   const reset = useCallback(() => setState(INITIAL_STATE), []);
 
   return {

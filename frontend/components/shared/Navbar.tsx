@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { clearAuthUser, getAuthUser, isAdmin, subscribeAuthUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 const ENABLE_AUTH = process.env.NEXT_PUBLIC_ENABLE_AUTH === "true";
 
@@ -23,6 +24,8 @@ export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const authUser = useSyncExternalStore(subscribeAuthUser, getAuthUser, () => null);
+  const isLoggedIn = ENABLE_AUTH ? !!authUser : true;
+
   const navItems = [
     { href: "/", label: "标签生成", active: pathname === "/" },
     { href: "/batch", label: "批量打码", active: pathname === "/batch" },
@@ -35,6 +38,9 @@ export function Navbar() {
   ];
 
   const handleLogout = () => {
+    // Only clear the auth session — remembered credentials (prefill) are kept
+    // intentionally so the user can log back in without re-typing.
+    // The session cookie is invalidated server-side via /auth/jwt/logout.
     clearAuthUser();
     router.replace("/login");
   };
@@ -57,12 +63,13 @@ export function Navbar() {
               {navItems.map((item) => (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={isLoggedIn ? item.href : "/login"}
                   className={cn(
                     "rounded-md px-3 py-1.5 transition-colors",
-                    item.active
+                    item.active && isLoggedIn
                       ? "bg-muted text-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    !isLoggedIn && "opacity-50"
                   )}
                 >
                   {item.label}
@@ -87,8 +94,8 @@ export function Navbar() {
                 {navItems.map((item) => (
                   <DropdownMenuItem
                     key={item.href}
-                    className={cn(item.active && "bg-muted text-foreground")}
-                    onClick={() => router.push(item.href)}
+                    className={cn(item.active && isLoggedIn && "bg-muted text-foreground")}
+                    onClick={() => router.push(isLoggedIn ? item.href : "/login")}
                   >
                     {item.label}
                   </DropdownMenuItem>
@@ -96,6 +103,12 @@ export function Navbar() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
+          {ENABLE_AUTH && !authUser && (
+            <Button size="sm" variant="default" onClick={() => router.push("/login")}>
+              登录
+            </Button>
+          )}
 
           {ENABLE_AUTH && authUser ? (
             <DropdownMenu>
