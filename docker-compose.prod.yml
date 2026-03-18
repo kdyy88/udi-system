@@ -22,7 +22,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-gs1user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-gs1udi}
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379
       ENABLE_AUTH: ${ENABLE_AUTH:-true}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in production}
       RESEND_API_KEY: ${RESEND_API_KEY:-""}
@@ -30,7 +30,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL must be set (e.g. https://yourdomain.com)}
       # With nginx as single entry point, CORS_ORIGINS = same origin as frontend
       CORS_ORIGINS: ${FRONTEND_URL:?FRONTEND_URL must be set}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}  # set true only after HTTPS is configured
       WORKERS: ${WORKERS:-4}
     # No ports exposed — only reachable via nginx on the internal network
     expose:
@@ -51,10 +51,15 @@ services:
     image: redis:7-alpine
     container_name: gs1-udi-redis
     restart: unless-stopped
+    # Require password authentication — REDIS_PASSWORD must be set in .env
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     volumes:
       - redis_prod_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # $$REDIS_PASSWORD → $REDIS_PASSWORD inside the container shell
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -71,6 +76,13 @@ services:
     # No ports exposed — only reachable via nginx on the internal network
     expose:
       - "3000"
+    healthcheck:
+      # Next.js is ready when it responds to any HTTP request
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
     depends_on:
       backend:
         condition: service_healthy
@@ -88,7 +100,7 @@ services:
       # - /etc/letsencrypt/live/${DOMAIN}:/etc/nginx/certs:ro
     depends_on:
       frontend:
-        condition: service_started
+        condition: service_healthy
       backend:
         condition: service_healthy
 
