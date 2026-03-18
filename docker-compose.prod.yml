@@ -14,6 +14,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
 
   backend:
     build:
@@ -31,7 +35,9 @@ services:
       # With nginx as single entry point, CORS_ORIGINS = same origin as frontend
       CORS_ORIGINS: ${FRONTEND_URL:?FRONTEND_URL must be set}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}  # set true only after HTTPS is configured
-      WORKERS: ${WORKERS:-4}
+      # 2-core server: 2 workers ≈ optimal (avoids OOM with 2 GB RAM)
+      # Formula: 2 × CPU_cores is safe; do NOT set above 3 on 2 GB
+      WORKERS: ${WORKERS:-2}
     # No ports exposed — only reachable via nginx on the internal network
     expose:
       - "8000"
@@ -46,6 +52,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 400m
 
   redis:
     image: redis:7-alpine
@@ -63,6 +73,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 64m
 
   frontend:
     build:
@@ -86,6 +100,10 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256m
 
   nginx:
     image: nginx:1.27-alpine
@@ -103,6 +121,10 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 32m
 
 volumes:
   postgres_prod_data:
