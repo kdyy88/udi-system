@@ -1,6 +1,6 @@
 # GS1 UDI System
 
-GS1 UDI 标签生成系统。**当前版本：v3.9**
+GS1 UDI 标签生成系统。**当前版本：v4.0**
 
 本项目面向医疗器械 / 医药场景下的 GS1 UDI 标签生成、模板管理与历史追溯需求，提供从单条录入、批量导入、条码预览到批次留痕的一体化工作流。
 
@@ -9,13 +9,14 @@ GS1 UDI 标签生成系统。**当前版本：v3.9**
 - **单标签生成**：录入 DI / PI 后实时预览并保存历史记录
 - **批量打码**：解析 Excel，前端校验 GS1 关键字段，批量生成并导出 ZIP
 - **模板体系**：系统默认模板 + 自定义模板 + 系统模板覆写与隐藏
+- **模板编辑器**：react-rnd 可视化画布，选中框永远 1px，预览与导出 SVG 完全一致
 - **历史追溯**：标签级与批次级历史查询、分页查看、重下载
 - **前后端一致校验**：GS1 规则前后端同构，降低预览与入库结果不一致风险
 - **认证可插拔**：通过 `ENABLE_AUTH` 环境变量在"纯工具模式"与"商业模式"之间一键切换
 
 技术栈：
 
-- 前端：Next.js 16 + shadcn/ui + TanStack Query
+- 前端：Next.js + shadcn/ui + TanStack Query + Zustand
 - 后端：FastAPI + SQLAlchemy 2.0（全链路 async）
 - 数据库：PostgreSQL 16（Alembic 迁移管理）
 - 认证：fastapi-users（JWT Cookie，可选）+ Resend 邮件服务
@@ -268,26 +269,26 @@ ENABLE_AUTH=true
 # 数据库
 POSTGRES_DB=gs1udi
 POSTGRES_USER=gs1user
-POSTGRES_PASSWORD=your_strong_password
+POSTGRES_PASSWORD=your_strong_password   # openssl rand -hex 32
+
+# Redis 认证（生产必填）
+REDIS_PASSWORD=your_redis_password       # openssl rand -hex 16
 
 # JWT（生产必改）
-JWT_SECRET=$(openssl rand -hex 32)
+JWT_SECRET=your_jwt_secret               # openssl rand -hex 32
+
+# 前端公开地址（影响 CORS 和邮件链接）
+FRONTEND_URL=http://your-server-ip       # HTTPS 就写 https://yourdomain.com
+
+# Cookie：HTTP 初次部署用 false；配好 HTTPS 后改 true
+COOKIE_SECURE=false
+
+# Gunicorn 进程数：2 核推荐 2，按 2×CPU核心数 调整
+WORKERS=2
 
 # 邮件（ENABLE_AUTH=true 时需要）
 RESEND_API_KEY=re_xxxx
 RESEND_FROM_EMAIL=noreply@your-domain.com
-
-# 前端
-FRONTEND_URL=https://your-domain.com
-
-# 后端
-CORS_ORIGINS=https://your-domain.com
-COOKIE_SECURE=true
-WORKERS=4
-
-# 端口
-BACKEND_PORT=18000
-FRONTEND_PORT=3001
 ```
 
 ### 2. 构建镜像并启动
@@ -301,35 +302,14 @@ docker compose -f docker-compose.prod.yml up -d --build
 ### 3. 验证
 
 ```bash
-curl http://localhost:18000/api/v1/health
-docker compose -f docker-compose.prod.yml logs -f backend
+# Nginx 已在 80 端口监听，直接验证
+curl http://your-server-ip/api/v1/health
+docker compose -f docker-compose.prod.yml logs -f --tail=50
 ```
 
-### 4. Nginx 反向代理（推荐）
+> Nginx 已内置于 `docker-compose.prod.yml`，无需额外配置。HTTPS 就绪后取消注释 `nginx/nginx.conf` 中的 SSL 块并将 `COOKIE_SECURE=true` 写入 `.env`。
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:18000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        client_max_body_size 10m;
-    }
-}
-```
-
-> HTTPS：`certbot --nginx -d your-domain.com`
-
-### 5. 更新部署
+### 4. 更新部署
 
 ```bash
 git pull
@@ -338,7 +318,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 Alembic 迁移由 `entrypoint.sh` 自动执行。
 
-### 6. 停止 / 清理
+### 5. 停止 / 清理
 
 ```bash
 docker compose -f docker-compose.prod.yml down      # 保留数据
@@ -350,7 +330,8 @@ docker compose -f docker-compose.prod.yml down -v    # 删除数据（危险）
 ## 源码导读
 
 - [Docs/SOURCE_MAP.md](Docs/SOURCE_MAP.md) — 源码分层地图与调用链速查
+- [Docs/更新日志v4.0.md](Docs/更新日志v4.0.md) — v4.0 编辑器体验、预览一致性、生产部署加固
 - [Docs/更新日志v3.9.md](Docs/更新日志v3.9.md) — v3.9 认证解耦（Core & Shell 架构）
-- [Docs/更新日志v3.8.md](Docs/更新日志v3.8.md) — v3.8 账号体系全面重构（fastapi-users / 邮箱注册 / Cookie 鉴权）
+- [Docs/更新日志v3.8.md](Docs/更新日志v3.8.md) — v3.8 账号体系全面重构
 - [Docs/更新日志v3.6.md](Docs/更新日志v3.6.md) — v3.6 模板管理、系统模板覆写
 - [Docs/更新日志v3.0.md](Docs/更新日志v3.0.md) — v3.0 批量打码架构

@@ -29,9 +29,9 @@ frontend/
 │   ├── labels/
 │   │   ├── LabelForm.tsx                # 单标签录入表单
 │   │   ├── HistoryTabs.tsx              # 历史总览：批次列表 + 全部明细
-│   │   ├── PreviewDialog.tsx            # 预览、保存、导出入口
-│   │   ├── PreviewTemplateCanvas.tsx    # 模板预览画布
-│   │   ├── BarcodePreview.tsx           # 条码预览组件
+│   │   ├── PreviewDialog.tsx            # 预览、保存、导出入口（统一 SVG 渲染）
+│   │   ├── PreviewTemplateCanvas.tsx    # 历史/批次预览用轻量画布（不含模板渲染）
+│   │   ├── BarcodePreview.tsx           # 条码预览组件（旧路径 fallback）
 │   │   └── PageHeader.tsx               # 通用页头
 │   └── shared/
 │       ├── DataTable.tsx                # 明细表格
@@ -265,8 +265,9 @@ idle → parsing → validated → saving → generating → done | error
 - 对本地预览执行一次性保存
 - 导出 SVG / PNG 等格式
 
-当前约束：
+当前关键设计：
 
+- **统一 SVG 渲染路径**：所有预览（选了模板 / 未选模板）全部通过 `renderCustomSvg()` 生产 SVG，默认回落到 `sys-compact` 系统模板。预览画面与导出文件做到像素级一致。
 - 针对同一份本地预览，保存逻辑具备幂等保护，避免多格式导出造成重复写历史
 
 ### `DataTable`
@@ -284,8 +285,12 @@ idle → parsing → validated → saving → generating → done | error
 
 职责：
 
-- 根据 `CanvasDefinition` 渲染预览画布
-- 为编辑器、预览弹窗、导出链路提供统一视觉基线
+- 为批次页、历史页简单预览（PNG/SVG 数据对象）提供展示鞠架
+
+说明：
+
+- 单次生成的预览弹窗已改用 `renderCustomSvg()` 统一路径，不再使用此组件
+- 仓库保留以兼容现有多处历史预览入口
 
 ---
 

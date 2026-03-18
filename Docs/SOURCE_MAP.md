@@ -49,8 +49,9 @@
   - 输入邮箱触发密码重置邮件。
 - [frontend/app/(auth)/reset-password/page.tsx](frontend/app/(auth)/reset-password/page.tsx)（v3.8 新增）
   - 读取 URL `?token=` + 输入新密码完成重置。
-- [frontend/app/editor/page.tsx](frontend/app/editor/page.tsx)（v3.5 新增，v3.6 扩展）
-  - 新建模板编辑器；支持 `?seed=sys-xxx` 预加载系统模板画布；管理员"更新系统模板"+"另存为个人模板"双按钮。
+- [frontend/app/editor/page.tsx](frontend/app/editor/page.tsx)（v3.5 新增，v4.0 更新）
+  - 新建模板编辑器；支持 `?seed=sys-xxx` 预加载系统模板画布；管理员“更新系统模板”+“另存为个人模板”双按钮。
+  - v4.0：缩放滑块控制 `displayScale`（替代旧版 CSS transform zoom）。
 - [frontend/app/editor/[id]/page.tsx](frontend/app/editor/[id]/page.tsx)（v3.5 新增）
   - 编辑已有模板。
 - [frontend/app/templates/page.tsx](frontend/app/templates/page.tsx)（v3.6 新增）
@@ -160,8 +161,11 @@
 - [frontend/components/labels/HistoryTabs.tsx](frontend/components/labels/HistoryTabs.tsx) — 双 Tab 历史（批次 + 明细）
 - [frontend/components/labels/LabelForm.tsx](frontend/components/labels/LabelForm.tsx) — 标签录入表单
 - [frontend/components/labels/PreviewDialog.tsx](frontend/components/labels/PreviewDialog.tsx) — 条码预览 + 导出
+  - 统一 SVG 渲染：无论是否选了模板，均调用 `renderCustomSvg()`，默认回落 `sys-compact`。预览与导出 SVG 完全一致。
+  - `kind === "local"`：导出才保存后端；`kind === "history"`：只预览不重复保存
 - [frontend/components/shared/DataTable.tsx](frontend/components/shared/DataTable.tsx) — 历史表格（cursor 分页）
 - [frontend/components/editor/](frontend/components/editor/) — Canvas / ElementToolbar / PropertiesPanel / TemplateGallery / TemplatePreviewDialog
+  - `Canvas.tsx`（v4.0 重写）：`displayScale` 替代 CSS `transform:scale`。布局坐标乘以 `displayScale` 写入 DOM，`onDragStop`/`onResizeStop` 除以写回 Store。选中框物理 1px，react-selecto 框选。
 - [frontend/components/ui/](frontend/components/ui/) — shadcn/ui 基础组件
 
 ### Feature 层（`features/labels/preview/`）
